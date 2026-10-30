@@ -8,6 +8,7 @@ public class Health : MonoBehaviour
     public float MaxHealth => maxHealth;
     public float CurrentHealth { get; private set; }
     public event Action Died;
+    public event Action<float> Damaged;
 
     private void Awake()
     {
@@ -24,7 +25,9 @@ public class Health : MonoBehaviour
     {
         if (CurrentHealth <= 0f) return;
 
-        CurrentHealth = Mathf.Max(0f, CurrentHealth - amount);
+        float applied = Mathf.Min(amount, CurrentHealth);
+        CurrentHealth -= applied;
+        Damaged?.Invoke(applied);
         if (CurrentHealth <= 0f)
         {
             Died?.Invoke();

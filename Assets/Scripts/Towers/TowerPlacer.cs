@@ -46,13 +46,39 @@ public class TowerPlacer : MonoBehaviour
         UpdateHoveredCell();
         UpdatePreview();
 
-        bool confirmPressed = (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
-            || (kb != null && kb.bKey.wasPressedThisFrame);
-
-        if (confirmPressed)
+        // Taps/clicks arrive through TouchControls.TryPlaceAtScreenPoint; B places at the facing cell.
+        if (kb != null && kb.bKey.wasPressedThisFrame)
         {
             TryPlaceTower();
         }
+    }
+
+    public bool TryPlaceAtScreenPoint(Vector2 screenPoint)
+    {
+        if (!TryGetGroundCell(screenPoint, out Vector2Int cell)) return false;
+
+        hoveredCell = cell;
+        hoveredCellValid = IsCellValid(cell);
+        UpdatePreview();
+
+        if (!TryPlaceTower()) return false;
+
+        SelectTower(-1);
+        return true;
+    }
+
+    private bool TryGetGroundCell(Vector2 screenPoint, out Vector2Int cell)
+    {
+        cell = default;
+        Camera cam = Camera.main;
+        if (cam == null || grid == null) return false;
+
+        Ray ray = cam.ScreenPointToRay(screenPoint);
+        var groundPlane = new Plane(Vector3.up, Vector3.zero);
+        if (!groundPlane.Raycast(ray, out float enter)) return false;
+
+        cell = grid.WorldToCell(ray.GetPoint(enter));
+        return true;
     }
 
     public void SelectTower(int index)
@@ -111,9 +137,23 @@ public class TowerPlacer : MonoBehaviour
         Vector3 targetPoint = player.position + forward * grid.CellSize;
         hoveredCell = grid.WorldToCell(targetPoint);
 
+        // With a mouse (desktop testing), preview the cell under the cursor instead.
+        if (Touchscreen.current == null && Mouse.current != null
+            && TryGetGroundCell(Mouse.current.position.ReadValue(), out Vector2Int mouseCell))
+        {
+            hoveredCell = mouseCell;
+        }
+
+        hoveredCellValid = IsCellValid(hoveredCell);
+    }
+
+    private bool IsCellValid(Vector2Int cell)
+    {
+        if (SelectedIndex < 0 || SelectedIndex >= towerDefinitions.Length) return false;
+
         TowerDefinition def = towerDefinitions[SelectedIndex];
-        hoveredCellValid = grid.IsInBounds(hoveredCell)
-            && !grid.IsOccupied(hoveredCell)
+        return grid.IsInBounds(cell)
+            && !grid.IsOccupied(cell)
             && GameManager.Instance != null
             && GameManager.Instance.Scrap >= def.cost;
     }
@@ -127,28 +167,34 @@ public class TowerPlacer : MonoBehaviour
         previewMaterial.color = hoveredCellValid ? ValidColor : InvalidColor;
     }
 
-    private void TryPlaceTower()
+    private bool TryPlaceTower()
     {
-        if (SelectedIndex < 0 || grid == null) return;
+        if (SelectedIndex < 0 || grid == null) return false;
         if (!hoveredCellValid)
         {
             Debug.Log("[TowerPlacer] Cannot place tower there.");
-            return;
+            return false;
         }
 
         TowerDefinition def = towerDefinitions[SelectedIndex];
         if (def.prefab == null)
         {
             Debug.LogWarning("[TowerPlacer] Selected tower definition has no prefab assigned - re-run 'Tools > Iron Hold > 2) Build Prototype Scene'.");
-            return;
+            return false;
         }
 
-        if (GameManager.Instance == null || !GameManager.Instance.SpendScrap(def.cost)) return;
+        if (GameManager.Instance == null || !GameManager.Instance.SpendScrap(def.cost)) return false;
 
         Vector3 spawnPos = grid.CellToWorldCenter(hoveredCell);
-        Instantiate(def.prefab, spawnPos, Quaternion.identity);
+        Tower tower = Instantiate(def.prefab, spawnPos, Quaternion.identity);
+        tower.gameObject.AddComponent<PopIn>();
         grid.Occupy(hoveredCell);
+
+        GameFx.Dust(spawnPos);
+        IsoCameraFollow.AddTrauma(0.15f);
+        Sfx.Play(SfxId.Build);
         Debug.Log($"[TowerPlacer] Placed {def.displayName} at {spawnPos}");
+        return true;
     }
 
     private void EnsurePreviewMarker()

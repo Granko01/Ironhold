@@ -9,6 +9,10 @@ public class Tower : MonoBehaviour
     [SerializeField] private Projectile projectilePrefab;
     [SerializeField] private Transform firePoint;
     [SerializeField] private Transform turretPivot;
+    [SerializeField] private SfxId fireSound = SfxId.Shoot;
+    [SerializeField] private float firePitch = 1f;
+
+    private const float FireConeDegrees = 12f;
 
     private float cooldownTimer;
     private Enemy currentTarget;
@@ -34,9 +38,9 @@ public class Tower : MonoBehaviour
 
         if (currentTarget == null) return;
 
-        AimAtTarget();
+        bool aimed = AimAtTarget();
 
-        if (cooldownTimer <= 0f)
+        if (aimed && cooldownTimer <= 0f)
         {
             Fire();
             cooldownTimer = 1f / fireRate;
@@ -45,43 +49,22 @@ public class Tower : MonoBehaviour
 
     private void AcquireTarget()
     {
-        if (currentTarget != null)
-        {
-            float distSqr = (currentTarget.transform.position - transform.position).sqrMagnitude;
-            if (distSqr <= range * range) return;
-            currentTarget = null;
-        }
-
-        Collider[] hits = Physics.OverlapSphere(transform.position, range);
-        float closestDistSqr = float.MaxValue;
-        Enemy closest = null;
-
-        foreach (Collider hit in hits)
-        {
-            Enemy enemy = hit.GetComponent<Enemy>();
-            if (enemy == null) continue;
-
-            float distSqr = (enemy.transform.position - transform.position).sqrMagnitude;
-            if (distSqr < closestDistSqr)
-            {
-                closestDistSqr = distSqr;
-                closest = enemy;
-            }
-        }
-
-        currentTarget = closest;
+        if (currentTarget != null && currentTarget.IsAlive && currentTarget.IsWithin(transform.position, range)) return;
+        currentTarget = Enemy.FindClosest(transform.position, range);
     }
 
-    private void AimAtTarget()
+    // Returns true once the turret is facing the target closely enough to fire.
+    private bool AimAtTarget()
     {
-        if (turretPivot == null) return;
+        if (turretPivot == null) return true;
 
         Vector3 direction = currentTarget.transform.position - turretPivot.position;
         direction.y = 0f;
-        if (direction.sqrMagnitude < 0.0001f) return;
+        if (direction.sqrMagnitude < 0.0001f) return true;
 
         Quaternion targetRotation = Quaternion.LookRotation(direction);
         turretPivot.rotation = Quaternion.RotateTowards(turretPivot.rotation, targetRotation, turretRotationSpeed * Time.deltaTime);
+        return Quaternion.Angle(turretPivot.rotation, targetRotation) <= FireConeDegrees;
     }
 
     private void Fire()
@@ -89,7 +72,8 @@ public class Tower : MonoBehaviour
         if (projectilePrefab == null || firePoint == null) return;
 
         Projectile projectile = Instantiate(projectilePrefab, firePoint.position, firePoint.rotation);
-        projectile.Launch(firePoint.forward, damage);
+        projectile.Launch(firePoint.forward, damage, currentTarget);
+        Sfx.Play(fireSound, firePitch);
     }
 
     private void OnDrawGizmosSelected()

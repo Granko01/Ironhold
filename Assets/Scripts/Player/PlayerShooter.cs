@@ -8,9 +8,13 @@ public class PlayerShooter : MonoBehaviour
     [SerializeField] private float fireRate = 4f;
     [SerializeField] private float damage = 10f;
     [SerializeField] private float rotationSpeed = 720f;
+    [SerializeField] private Animator animator;
+
+    private static readonly int ShootParam = Animator.StringToHash("Shoot");
 
     private float cooldownTimer;
     private bool warnedMissingRefs;
+    private bool isDead;
     private Enemy currentTarget;
 
     public void Configure(Projectile prefab, Transform firePointTransform)
@@ -19,11 +23,19 @@ public class PlayerShooter : MonoBehaviour
         firePoint = firePointTransform;
     }
 
+    private void Awake()
+    {
+        if (animator == null) animator = GetComponentInChildren<Animator>();
+
+        Health health = GetComponent<Health>();
+        if (health != null) health.Died += () => isDead = true;
+    }
+
     private void LateUpdate()
     {
         cooldownTimer -= Time.deltaTime;
 
-        if (TowerPlacer.IsPlacing) return;
+        if (isDead || TowerPlacer.IsPlacing) return;
 
         AcquireTarget();
         if (currentTarget == null) return;
@@ -48,31 +60,8 @@ public class PlayerShooter : MonoBehaviour
 
     private void AcquireTarget()
     {
-        if (currentTarget != null)
-        {
-            float distSqr = (currentTarget.transform.position - transform.position).sqrMagnitude;
-            if (distSqr <= range * range) return;
-            currentTarget = null;
-        }
-
-        Collider[] hits = Physics.OverlapSphere(transform.position, range);
-        float closestDistSqr = float.MaxValue;
-        Enemy closest = null;
-
-        foreach (Collider hit in hits)
-        {
-            Enemy enemy = hit.GetComponent<Enemy>();
-            if (enemy == null) continue;
-
-            float distSqr = (enemy.transform.position - transform.position).sqrMagnitude;
-            if (distSqr < closestDistSqr)
-            {
-                closestDistSqr = distSqr;
-                closest = enemy;
-            }
-        }
-
-        currentTarget = closest;
+        if (currentTarget != null && currentTarget.IsAlive && currentTarget.IsWithin(transform.position, range)) return;
+        currentTarget = Enemy.FindClosest(transform.position, range);
     }
 
     private void AimAtTarget()
@@ -88,7 +77,9 @@ public class PlayerShooter : MonoBehaviour
     private void Fire()
     {
         Projectile projectile = Instantiate(projectilePrefab, firePoint.position, firePoint.rotation);
-        projectile.Launch(firePoint.forward, damage);
+        projectile.Launch(firePoint.forward, damage, currentTarget);
+        Sfx.Play(SfxId.Shoot, 1.25f, 0.8f);
+        if (animator != null) animator.SetTrigger(ShootParam);
     }
 
     private void OnDrawGizmosSelected()
