@@ -14,6 +14,7 @@ public enum SfxId
     Build,
     WaveStart,
     GameOver,
+    Upgrade,
 }
 
 // Procedurally synthesized placeholder sounds, so the game has audio feedback without any
@@ -69,6 +70,7 @@ public static class Sfx
             case SfxId.Build: return (0.5f, 0.1f);
             case SfxId.WaveStart: return (0.4f, 0.5f);
             case SfxId.GameOver: return (0.6f, 1f);
+            case SfxId.Upgrade: return (0.45f, 0.2f);
             default: return (0.3f, 0.05f);
         }
     }
@@ -160,6 +162,19 @@ public static class Sfx
                     float saw = (p.phase % 1f) * 2f - 1f;
                     return saw * 0.45f * Decay(t, 1.8f);
                 });
+            case SfxId.Upgrade:
+            {
+                // Rising major arpeggio: C6, E6, G6, C7.
+                float[] notes = { 1046.5f, 1318.5f, 1568f, 2093f };
+                return Render(0.42f, (t, p) =>
+                {
+                    int step = Mathf.Min(notes.Length - 1, (int)(t / 0.07f));
+                    p.phase += notes[step] / SampleRate * Mathf.PI * 2f;
+                    float local = t - step * 0.07f;
+                    float env = step == notes.Length - 1 ? Decay(local, 6f) : Decay(local, 14f);
+                    return (Mathf.Sin(p.phase) + Mathf.Sin(p.phase * 2f) * 0.25f) * env * 0.55f;
+                });
+            }
             default:
                 return new float[1];
         }

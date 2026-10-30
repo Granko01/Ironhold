@@ -55,7 +55,7 @@ public class PlayerShooter : MonoBehaviour
         }
 
         Fire();
-        cooldownTimer = 1f / fireRate;
+        cooldownTimer = 1f / (fireRate * RunModifiers.FireRate(TowerKind.Hero));
     }
 
     private void AcquireTarget()
@@ -76,8 +76,7 @@ public class PlayerShooter : MonoBehaviour
 
     private void Fire()
     {
-        Projectile projectile = Instantiate(projectilePrefab, firePoint.position, firePoint.rotation);
-        projectile.Launch(firePoint.forward, damage, currentTarget);
+        Projectile.FireVolley(projectilePrefab, firePoint, damage * RunModifiers.Damage(TowerKind.Hero), currentTarget, TowerKind.Hero);
         Sfx.Play(SfxId.Shoot, 1.25f, 0.8f);
         if (animator != null) animator.SetTrigger(ShootParam);
     }

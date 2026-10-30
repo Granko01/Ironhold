@@ -147,11 +147,11 @@ public static class ProjectSetup
         Tower teslaTower = GetOrCreateTowerPrefab("TowerTesla", TowerStyle.Tesla, new Color(0.52f, 0.55f, 0.6f), TeslaAccent, 1f, 6.5f, 2f, 8f, teslaBoltProjectile);
         Tower missileTower = GetOrCreateTowerPrefab("TowerMissile", TowerStyle.Missile, new Color(0.56f, 0.53f, 0.5f), MissileAccent, 1.15f, 11f, 0.5f, 55f, missileProjectile);
 
-        ConfigureTowerSound(gunTower, SfxId.Shoot, 1f);
-        ConfigureTowerSound(cannonTower, SfxId.Shoot, 0.5f);
-        ConfigureTowerSound(sniperTower, SfxId.Shoot, 0.7f);
-        ConfigureTowerSound(teslaTower, SfxId.Shoot, 1.8f);
-        ConfigureTowerSound(missileTower, SfxId.Shoot, 0.4f);
+        ConfigureTower(gunTower, TowerKind.Gun, SfxId.Shoot, 1f);
+        ConfigureTower(cannonTower, TowerKind.Cannon, SfxId.Shoot, 0.5f);
+        ConfigureTower(sniperTower, TowerKind.Sniper, SfxId.Shoot, 0.7f);
+        ConfigureTower(teslaTower, TowerKind.Tesla, SfxId.Shoot, 1.8f);
+        ConfigureTower(missileTower, TowerKind.Missile, SfxId.Shoot, 0.4f);
 
         GameObject playerPrefabGo = GetOrCreatePlayerPrefab(bulletProjectile);
         GameObject corePrefabGo = GetOrCreateCorePrefab();
@@ -1061,15 +1061,18 @@ public static class ProjectSetup
             LowPolyKit.CreateBlock("PillarLight", go.transform, dir * 0.36f + new Vector3(0f, 0.05f, 0f), new Vector3(0f, angle, 0f), new Vector3(0.16f, 0.06f, 0.16f), accentMat);
         }
 
-        // The pivot carries the vertical stretch and the spin; the gem inside is a cube stood on its
-        // corner, which reads as a faceted crystal once lit.
+        // The pivot carries the spin and size (compensating the base's wide X/Z scale); the gem is a
+        // flat-shaded hexagonal bipyramid so each facet catches the light differently.
         GameObject crystal = new GameObject("Crystal");
         crystal.transform.SetParent(go.transform, false);
-        crystal.transform.localPosition = new Vector3(0f, 1.55f, 0f);
-        crystal.transform.localScale = new Vector3(0.45f, 1.25f, 0.45f);
+        crystal.transform.localPosition = new Vector3(0f, 1.75f, 0f);
+        crystal.transform.localScale = new Vector3(0.5f, 1.15f, 0.5f);
         crystal.AddComponent<SlowSpinner>().Configure(Vector3.up, 45f);
-        Transform gem = LowPolyKit.CreateBlock("Gem", crystal.transform, Vector3.zero, Vector3.zero, Vector3.one, crystalMat);
-        gem.localRotation = Quaternion.FromToRotation(Vector3.one, Vector3.up);
+
+        GameObject gem = new GameObject("Gem", typeof(MeshFilter), typeof(MeshRenderer));
+        gem.transform.SetParent(crystal.transform, false);
+        gem.GetComponent<MeshFilter>().sharedMesh = GetOrCreateGemMesh();
+        gem.GetComponent<MeshRenderer>().sharedMaterial = crystalMat;
 
         GameObject glow = new GameObject("CoreGlow");
         glow.transform.SetParent(go.transform, false);
@@ -1366,6 +1369,8 @@ public static class ProjectSetup
 
         BuildHud(canvas, safeArea, spawner, coreHealth);
         BuildTowerShop(safeArea, placer);
+        spawner.SetUpgradeDraft(BuildUpgradeDraft(canvas));
+        EditorUtility.SetDirty(spawner);
     }
 
     private static void BuildTouchControls(Transform canvas, TowerPlacer placer)
@@ -1459,6 +1464,68 @@ public static class ProjectSetup
 
         TowerShopUI shopUi = row.gameObject.AddComponent<TowerShopUI>();
         shopUi.Configure(placer, buttonViews, hintText.gameObject);
+    }
+
+    private static UpgradeDraft BuildUpgradeDraft(Transform canvas)
+    {
+        Vector2 center = new Vector2(0.5f, 0.5f);
+        RectTransform overlay = CreateRect("UpgradeDraftPanel", canvas, Vector2.zero, Vector2.one, center, Vector2.zero, Vector2.zero);
+        AddImage(overlay, new Color(0.02f, 0.03f, 0.05f, 0.82f), raycast: true);
+
+        Text header = CreateText(overlay, "HeaderText", "WAVE 1 CLEARED", 68, ScrapGold, TextAnchor.MiddleCenter, center, new Vector2(0f, 520f), new Vector2(1040f, 90f));
+        header.fontStyle = FontStyle.Bold;
+        AddTextShadow(header);
+        Text subheader = CreateText(overlay, "SubheaderText", "Choose an upgrade", 38, new Color(0.85f, 0.88f, 0.92f), TextAnchor.MiddleCenter, center, new Vector2(0f, 445f), new Vector2(1040f, 56f));
+        AddTextShadow(subheader);
+
+        var views = new UpgradeCardView[3];
+        for (int i = 0; i < views.Length; i++)
+        {
+            views[i] = CreateUpgradeCard(overlay, i, new Vector2(0f, 220f - i * 280f));
+        }
+
+        UpgradeDraft draft = overlay.gameObject.AddComponent<UpgradeDraft>();
+        draft.Configure(overlay.gameObject, header, views);
+        return draft;
+    }
+
+    private static UpgradeCardView CreateUpgradeCard(Transform parent, int index, Vector2 position)
+    {
+        Vector2 center = new Vector2(0.5f, 0.5f);
+        RectTransform card = CreateRect($"UpgradeCard_{index}", parent, center, center, center, position, new Vector2(960f, 250f));
+        Image background = AddImage(card, new Color(0.12f, 0.13f, 0.17f, 0.98f), RoundedSprite, raycast: true);
+        Button button = card.gameObject.AddComponent<Button>();
+        button.transition = Selectable.Transition.None;
+        button.targetGraphic = background;
+
+        Vector2 midLeft = new Vector2(0f, 0.5f);
+        RectTransform icon = CreateRect("Icon", card, midLeft, midLeft, midLeft, new Vector2(30f, 0f), new Vector2(180f, 180f));
+        Image iconImage = AddImage(icon, Color.white, RoundedSprite);
+        Text iconLetter = CreateFillText(icon, "IconLetter", 80, new Color(0f, 0f, 0f, 0.6f), TextAnchor.MiddleCenter);
+        iconLetter.fontStyle = FontStyle.Bold;
+
+        Vector2 topLeft = new Vector2(0f, 1f);
+        Text title = CreateText(card, "Title", "", 50, Color.white, TextAnchor.UpperLeft, topLeft, new Vector2(240f, -34f), new Vector2(560f, 64f));
+        title.fontStyle = FontStyle.Bold;
+
+        Text description = CreateText(card, "Description", "", 34, new Color(0.82f, 0.85f, 0.9f), TextAnchor.UpperLeft, topLeft, new Vector2(240f, -110f), new Vector2(690f, 110f));
+        description.horizontalOverflow = HorizontalWrapMode.Wrap;
+
+        Vector2 topRight = new Vector2(1f, 1f);
+        Text rarity = CreateText(card, "Rarity", "", 26, Color.white, TextAnchor.UpperRight, topRight, new Vector2(-30f, -30f), new Vector2(200f, 40f));
+        rarity.fontStyle = FontStyle.Bold;
+
+        return new UpgradeCardView
+        {
+            Root = card,
+            Button = button,
+            Background = background,
+            Icon = iconImage,
+            IconLetter = iconLetter,
+            Title = title,
+            Description = description,
+            Rarity = rarity,
+        };
     }
 
     private static TowerShopButtonView CreateTowerCard(Transform parent, int index, TowerDefinition def)
@@ -1679,9 +1746,10 @@ public static class ProjectSetup
         so.ApplyModifiedProperties();
     }
 
-    private static void ConfigureTowerSound(Tower tower, SfxId sound, float pitch)
+    private static void ConfigureTower(Tower tower, TowerKind kind, SfxId sound, float pitch)
     {
         var so = new SerializedObject(tower);
+        so.FindProperty("kind").enumValueIndex = (int)kind;
         so.FindProperty("fireSound").enumValueIndex = (int)sound;
         so.FindProperty("firePitch").floatValue = pitch;
         so.ApplyModifiedProperties();
@@ -1701,6 +1769,57 @@ public static class ProjectSetup
         Renderer renderer = ring.GetComponent<Renderer>();
         renderer.sharedMaterial = ringMat;
         renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+    }
+
+    private static Mesh GetOrCreateGemMesh()
+    {
+        const string path = "Assets/Materials/CoreGem.asset";
+        Mesh mesh = AssetDatabase.LoadAssetAtPath<Mesh>(path);
+        if (mesh != null) return mesh;
+
+        const int sides = 6;
+        const float radius = 0.6f;
+        const float girdleHeight = 0.25f;
+        Vector3 top = new Vector3(0f, 1f, 0f);
+        Vector3 bottom = new Vector3(0f, -0.8f, 0f);
+
+        var vertices = new System.Collections.Generic.List<Vector3>();
+        var triangles = new System.Collections.Generic.List<int>();
+
+        // Separate vertices per triangle give hard, flat-shaded facets.
+        void AddTriangle(Vector3 a, Vector3 b, Vector3 c)
+        {
+            int start = vertices.Count;
+            vertices.Add(a);
+            vertices.Add(b);
+            vertices.Add(c);
+            triangles.Add(start);
+            triangles.Add(start + 1);
+            triangles.Add(start + 2);
+        }
+
+        for (int i = 0; i < sides; i++)
+        {
+            float a0 = i * Mathf.PI * 2f / sides;
+            float a1 = (i + 1) * Mathf.PI * 2f / sides;
+            Vector3 p0 = new Vector3(Mathf.Cos(a0) * radius, girdleHeight, Mathf.Sin(a0) * radius);
+            Vector3 p1 = new Vector3(Mathf.Cos(a1) * radius, girdleHeight, Mathf.Sin(a1) * radius);
+            Vector3 q0 = new Vector3(p0.x, -girdleHeight * 0.4f, p0.z);
+            Vector3 q1 = new Vector3(p1.x, -girdleHeight * 0.4f, p1.z);
+
+            AddTriangle(top, p1, p0);
+            AddTriangle(p0, p1, q1);
+            AddTriangle(p0, q1, q0);
+            AddTriangle(bottom, q0, q1);
+        }
+
+        mesh = new Mesh { name = "CoreGem" };
+        mesh.SetVertices(vertices);
+        mesh.SetTriangles(triangles, 0);
+        mesh.RecalculateNormals();
+        mesh.RecalculateBounds();
+        AssetDatabase.CreateAsset(mesh, path);
+        return mesh;
     }
 
     private static Material GetOrCreateEmissiveMaterial(string name, Color baseColor, Color emission)

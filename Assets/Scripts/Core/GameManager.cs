@@ -10,6 +10,7 @@ public class GameManager : MonoBehaviour
     [SerializeField] private Health coreHealth;
 
     public int Scrap { get; private set; }
+    public Health CoreHealth => coreHealth;
     public bool IsGameOver { get; private set; }
 
     // Amount and world position, so the HUD can fly a coin from where the scrap dropped.
@@ -21,6 +22,16 @@ public class GameManager : MonoBehaviour
         Scrap = startingScrap;
         IsGameOver = false;
         Time.timeScale = 1f;
+        RunModifiers.Reset();
+        UpgradeCatalog.ResetRun();
+    }
+
+    private void Update()
+    {
+        if (!IsGameOver && coreHealth != null && RunModifiers.CoreRegenPerSecond > 0f)
+        {
+            coreHealth.Heal(RunModifiers.CoreRegenPerSecond * Time.deltaTime);
+        }
     }
 
     // Subscribed at runtime: event subscriptions made by editor setup code are not serialized.

@@ -21,6 +21,18 @@ public class Health : MonoBehaviour
         CurrentHealth = maxHealth;
     }
 
+    public void Heal(float amount)
+    {
+        if (CurrentHealth <= 0f) return;
+        CurrentHealth = Mathf.Min(maxHealth, CurrentHealth + amount);
+    }
+
+    public void IncreaseMax(float amount)
+    {
+        maxHealth += amount;
+        Heal(amount);
+    }
+
     public void TakeDamage(float amount)
     {
         if (CurrentHealth <= 0f) return;

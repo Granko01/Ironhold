@@ -154,7 +154,7 @@ public class Enemy : MonoBehaviour
         Sfx.Play(SfxId.Pop, Mathf.Lerp(1.3f, 0.6f, Mathf.InverseLerp(1.2f, 5f, height)));
         if (deathShake > 0f) IsoCameraFollow.AddTrauma(deathShake);
 
-        GameManager.Instance?.AddScrap(scrapReward, center);
+        GameManager.Instance?.AddScrap(Mathf.RoundToInt(scrapReward * RunModifiers.ScrapMultiplier), center);
         if (animator != null) animator.SetTrigger(DeathParam);
         Despawn(1f);
     }

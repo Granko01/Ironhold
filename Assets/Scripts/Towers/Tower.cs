@@ -1,7 +1,9 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 public class Tower : MonoBehaviour
 {
+    [SerializeField] private TowerKind kind = TowerKind.Gun;
     [SerializeField] private float range = 8f;
     [SerializeField] private float fireRate = 3f;
     [SerializeField] private float damage = 8f;
@@ -14,8 +16,29 @@ public class Tower : MonoBehaviour
 
     private const float FireConeDegrees = 12f;
 
+    private static readonly List<Tower> placed = new List<Tower>();
+
     private float cooldownTimer;
     private Enemy currentTarget;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetStatics() => placed.Clear();
+
+    public static int CountOf(TowerKind towerKind)
+    {
+        int count = 0;
+        foreach (Tower tower in placed)
+        {
+            if (tower.kind == towerKind) count++;
+        }
+        return count;
+    }
+
+    private float Range => range * RunModifiers.Range(kind);
+
+    private void OnEnable() => placed.Add(this);
+
+    private void OnDisable() => placed.Remove(this);
 
     public void Configure(Projectile prefab, Transform firePointTransform, Transform turretPivotTransform)
     {
@@ -43,14 +66,15 @@ public class Tower : MonoBehaviour
         if (aimed && cooldownTimer <= 0f)
         {
             Fire();
-            cooldownTimer = 1f / fireRate;
+            cooldownTimer = 1f / (fireRate * RunModifiers.FireRate(kind));
         }
     }
 
     private void AcquireTarget()
     {
-        if (currentTarget != null && currentTarget.IsAlive && currentTarget.IsWithin(transform.position, range)) return;
-        currentTarget = Enemy.FindClosest(transform.position, range);
+        float effectiveRange = Range;
+        if (currentTarget != null && currentTarget.IsAlive && currentTarget.IsWithin(transform.position, effectiveRange)) return;
+        currentTarget = Enemy.FindClosest(transform.position, effectiveRange);
     }
 
     // Returns true once the turret is facing the target closely enough to fire.
@@ -71,8 +95,7 @@ public class Tower : MonoBehaviour
     {
         if (projectilePrefab == null || firePoint == null) return;
 
-        Projectile projectile = Instantiate(projectilePrefab, firePoint.position, firePoint.rotation);
-        projectile.Launch(firePoint.forward, damage, currentTarget);
+        Projectile.FireVolley(projectilePrefab, firePoint, damage * RunModifiers.Damage(kind), currentTarget, kind);
         Sfx.Play(fireSound, firePitch);
     }
 

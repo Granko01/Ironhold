@@ -9,6 +9,7 @@ public class EnemySpawner : MonoBehaviour
     [SerializeField] private Enemy bossPrefab;
     [SerializeField] private Transform coreTarget;
     [SerializeField] private Transform[] spawnPoints;
+    [SerializeField] private UpgradeDraft upgradeDraft;
 
     [Header("Wave Scaling")]
     [SerializeField] private int baseThreatBudget = 8;
@@ -21,11 +22,16 @@ public class EnemySpawner : MonoBehaviour
     [SerializeField] private float spawnInterval = 0.6f;
     [SerializeField] private float minSpawnInterval = 0.15f;
     [SerializeField] private float spawnIntervalDecayPerWave = 0.03f;
-    [SerializeField] private float delayBetweenWaves = 3f;
+    [SerializeField] private float delayBetweenWaves = 1.5f;
 
     public int CurrentWave { get; private set; }
     public int EnemiesRemaining { get; private set; }
     public bool IsBossWave { get; private set; }
+
+    public void SetUpgradeDraft(UpgradeDraft draft)
+    {
+        upgradeDraft = draft;
+    }
 
     public void Configure(EnemySpawnEntry[] types, Enemy boss, Transform core, Transform[] points)
     {
@@ -66,6 +72,7 @@ public class EnemySpawner : MonoBehaviour
             }
 
             Debug.Log($"Wave {CurrentWave} clear!");
+            if (upgradeDraft != null) yield return upgradeDraft.Run(CurrentWave);
             yield return new WaitForSeconds(delayBetweenWaves);
         }
     }

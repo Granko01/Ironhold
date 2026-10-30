@@ -30,15 +30,34 @@ public class Projectile : MonoBehaviour
     private Enemy target;
     private int piercesLeft;
     private bool spent;
+    private TowerKind source = TowerKind.Hero;
 
-    public void Launch(Vector3 launchDirection, float launchDamage, Enemy launchTarget = null)
+    private const float VolleySpreadDegrees = 9f;
+
+    // Fires 1 + upgrade-granted extra projectiles in a fan centred on the fire point's aim.
+    public static void FireVolley(Projectile prefab, Transform firePoint, float damage, Enemy target, TowerKind source)
+    {
+        int count = 1 + RunModifiers.ExtraProjectiles(source);
+        for (int i = 0; i < count; i++)
+        {
+            float angle = (i - (count - 1) * 0.5f) * VolleySpreadDegrees;
+            Quaternion rotation = firePoint.rotation * Quaternion.Euler(0f, angle, 0f);
+            Projectile projectile = Instantiate(prefab, firePoint.position, rotation);
+            projectile.Launch(rotation * Vector3.forward, damage, target, source);
+        }
+    }
+
+    public void Launch(Vector3 launchDirection, float launchDamage, Enemy launchTarget = null, TowerKind launchSource = TowerKind.Hero)
     {
         direction = launchDirection.normalized;
         damage = launchDamage;
         target = launchTarget;
-        piercesLeft = pierceCount;
+        source = launchSource;
+        piercesLeft = pierceCount + RunModifiers.ExtraPierce(source);
         Destroy(gameObject, lifetime);
     }
+
+    private float SplashRadius => splashRadius * RunModifiers.Splash(source);
 
     private void Update()
     {
@@ -71,7 +90,7 @@ public class Projectile : MonoBehaviour
 
         if (splashRadius > 0f)
         {
-            Explode(enemy.transform.position);
+            Explode(enemy.transform.position, SplashRadius);
         }
         else
         {
@@ -80,7 +99,8 @@ public class Projectile : MonoBehaviour
             Sfx.Play(SfxId.Hit);
         }
 
-        if (chainCount > 0) Chain(enemy);
+        int chains = chainCount > 0 ? chainCount + RunModifiers.ExtraChains(source) : 0;
+        if (chains > 0) Chain(enemy, chains);
 
         if (piercesLeft > 0)
         {
@@ -92,28 +112,28 @@ public class Projectile : MonoBehaviour
         Destroy(gameObject);
     }
 
-    private void Explode(Vector3 center)
+    private void Explode(Vector3 center, float radius)
     {
-        CombatFx.Blast(center + Vector3.up * 0.5f, splashRadius, fxColor);
+        CombatFx.Blast(center + Vector3.up * 0.5f, radius, fxColor);
         GameFx.Debris(center + Vector3.up * 0.3f, fxColor, 10, 6f, 0.2f);
-        IsoCameraFollow.AddTrauma(0.12f + splashRadius * 0.03f);
-        Sfx.Play(SfxId.Boom, 1.4f - splashRadius * 0.15f, 0.7f);
+        IsoCameraFollow.AddTrauma(0.12f + radius * 0.03f);
+        Sfx.Play(SfxId.Boom, 1.4f - radius * 0.15f, 0.7f);
 
         // Copy first: TakeDamage can kill enemies, which removes them from Enemy.Active.
         var victims = new List<Enemy>();
         foreach (Enemy enemy in Enemy.Active)
         {
-            if (enemy.IsWithin(center, splashRadius)) victims.Add(enemy);
+            if (enemy.IsWithin(center, radius)) victims.Add(enemy);
         }
 
         foreach (Enemy enemy in victims)
         {
-            float distance01 = Vector3.Distance(enemy.transform.position, center) / splashRadius;
+            float distance01 = Vector3.Distance(enemy.transform.position, center) / radius;
             enemy.Health.TakeDamage(damage * Mathf.Lerp(1f, splashFalloff, distance01));
         }
     }
 
-    private void Chain(Enemy firstHit)
+    private void Chain(Enemy firstHit, int chains)
     {
         var chained = new List<Enemy> { firstHit };
         Enemy from = firstHit;
@@ -123,7 +143,7 @@ public class Projectile : MonoBehaviour
         if (splashRadius <= 0f) CombatFx.Line(transform.position, fromPos, fxColor);
         Sfx.Play(SfxId.Zap);
 
-        for (int i = 0; i < chainCount; i++)
+        for (int i = 0; i < chains; i++)
         {
             Enemy next = Enemy.FindClosest(from.transform.position, chainRange, chained);
             if (next == null) break;
