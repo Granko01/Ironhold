@@ -34,6 +34,20 @@ public static class ProjectSetup
     private static readonly Color PanelColor = new Color(0.06f, 0.07f, 0.09f, 0.8f);
     private static readonly Color ScrapGold = new Color(1f, 0.82f, 0.3f);
 
+    private static readonly Color ZombieBlood = new Color(0.5f, 0.07f, 0.06f);
+    private static readonly Color ZombieBone = new Color(0.86f, 0.82f, 0.7f);
+
+    // Slow, heavy-footed shuffle shared by the plain walkers.
+    private static readonly CharacterFactory.Gait ShambleGait = new CharacterFactory.Gait
+    {
+        stateName = "Walk",
+        period = 0.9f,
+        legSwingDeg = 20f,
+        armSwingDeg = 20f,
+        hipsBob = 0.09f,
+        torsoLeanExtra = 4f,
+    };
+
     private static readonly Color EnemyRingColor = new Color(0.95f, 0.22f, 0.18f);
     private static readonly Color PlayerRingColor = new Color(0.25f, 0.75f, 1f);
 
@@ -233,12 +247,12 @@ public static class ProjectSetup
         SetPrivateField(towerPlacer, "player", player.transform);
         SetTowerDefinitions(towerPlacer, new (string name, int cost, GameObject prefab, Color accentColor)[]
         {
-            ("Wall", 25, wallPrefab.gameObject, WallAccent),
             ("Gun", 50, gunTower.gameObject, GunAccent),
             ("Cannon", 120, cannonTower.gameObject, CannonAccent),
             ("Sniper", 150, sniperTower.gameObject, SniperAccent),
             ("Tesla", 90, teslaTower.gameObject, TeslaAccent),
             ("Missile", 180, missileTower.gameObject, MissileAccent),
+            ("Wall", 25, wallPrefab.gameObject, WallAccent),
         });
 
         SquadCommander squad = BuildSquad(soldierPrefab, player.transform);
@@ -383,9 +397,9 @@ public static class ProjectSetup
         go.name = "Enemy";
 
         CapsuleCollider collider = LowPolyKit.GetOrAddComponent<CapsuleCollider>(go);
-        collider.center = new Vector3(0f, 0.85f, 0f);
+        collider.center = new Vector3(0f, 0.92f, 0f);
         collider.radius = 0.4f;
-        collider.height = 1.7f;
+        collider.height = 1.85f;
 
         Health health = LowPolyKit.GetOrAddComponent<Health>(go);
         health.Configure(30f);
@@ -393,19 +407,21 @@ public static class ProjectSetup
 
         var colors = new CharacterFactory.BipedColors
         {
-            uniform = new Color(0.58f, 0.22f, 0.2f),
-            skin = new Color(0.55f, 0.45f, 0.4f),
-            headwear = new Color(0.14f, 0.14f, 0.15f),
-            accent = new Color(1f, 0.2f, 0.15f),
-            weaponBody = new Color(0.2f, 0.2f, 0.22f),
-            weaponDark = new Color(0.07f, 0.07f, 0.08f),
+            uniform = new Color(0.46f, 0.4f, 0.32f),
+            skin = new Color(0.5f, 0.6f, 0.42f),
+            headwear = new Color(0.14f, 0.12f, 0.1f),
+            accent = ZombieBlood,
+            weaponBody = new Color(0.46f, 0.4f, 0.32f),
+            weaponDark = new Color(0.4f, 0.48f, 0.34f),
         };
 
-        CharacterFactory.BipedRig rig = CharacterFactory.BuildBiped(go, CharacterFactory.GruntProportions, colors, "Grunt");
+        CharacterFactory.BipedProportions p = CharacterFactory.Zombified(CharacterFactory.GruntProportions, new Vector3(-76f, 4f, 0f), new Vector3(-88f, -4f, 0f), 14f);
+        CharacterFactory.BipedRig rig = CharacterFactory.BuildBiped(go, p, colors, "Grunt", hasWeapon: false);
+        AddZombieDetails(rig, p, "Grunt", colors.skin, new Color(0.24f, 0.26f, 0.34f), new Color(2.4f, 2f, 0.3f));
         ConfigureEnemyFeedback(enemy, colors.accent, 14, 0f, 0f);
         AddTeamRing(go.transform, 0.6f, EnemyRingColor);
-        CharacterFactory.BuildAnimations(go, rig, CharacterFactory.GruntProportions, "Grunt",
-            CharacterFactory.WalkGait, null, "Attack",
+        CharacterFactory.BuildAnimations(go, rig, p, "Grunt",
+            ShambleGait, null, "Attack",
             45f, 14f, false, out AnimatorController controller);
 
         Animator animator = LowPolyKit.GetOrAddComponent<Animator>(go);
@@ -414,6 +430,54 @@ public static class ProjectSetup
 
         GameObject prefab = LowPolyKit.EndPrefabEdit(go, path, wasLoaded);
         return prefab.GetComponent<Enemy>();
+    }
+
+    // Turns a biped into one of the undead: glowing eyes and a dark mouth, bare rotting forearms,
+    // torn clothes showing skin and ribs, bloodstains and jeans. Removes the chest badge that
+    // living characters wear.
+    private static void AddZombieDetails(CharacterFactory.BipedRig rig, CharacterFactory.BipedProportions p, string prefix, Color skin, Color pants, Color eyeGlow)
+    {
+        Transform badge = rig.torso.Find("ChestAccent");
+        if (badge != null) Object.DestroyImmediate(badge.gameObject);
+
+        Material skinMat = GetOrCreateMaterial($"{prefix}Skin", skin, unlit: false);
+        Material pantsMat = GetOrCreateMaterial($"{prefix}Pants", pants, unlit: false);
+        Material eyeMat = GetOrCreateMaterial($"{prefix}EyeGlow", eyeGlow, unlit: true);
+        Material mouthMat = GetOrCreateMaterial("ZombieMouth", new Color(0.1f, 0.02f, 0.02f), unlit: true);
+        Material bloodMat = GetOrCreateMaterial("ZombieBloodStain", ZombieBlood, unlit: false);
+        Material boneMat = GetOrCreateMaterial("ZombieBone", ZombieBone, unlit: false);
+
+        Transform torso = rig.torso;
+        Vector3 t = p.torsoSize;
+        Vector3 h = p.headSize;
+        float headCenterY = t.y * 0.5f + h.y * 0.5f - 0.02f;
+        float headFront = h.z * 0.5f + 0.006f;
+        float front = t.z * 0.5f + 0.006f;
+
+        LowPolyKit.CreateBlock("EyeL", torso, new Vector3(-h.x * 0.22f, headCenterY + h.y * 0.08f, headFront), Vector3.zero, new Vector3(h.x * 0.17f, h.y * 0.13f, 0.02f), eyeMat);
+        LowPolyKit.CreateBlock("EyeR", torso, new Vector3(h.x * 0.24f, headCenterY + h.y * 0.05f, headFront), Vector3.zero, new Vector3(h.x * 0.15f, h.y * 0.12f, 0.02f), eyeMat);
+        LowPolyKit.CreateBlock("Mouth", torso, new Vector3(0.02f, headCenterY - h.y * 0.26f, headFront), new Vector3(0f, 0f, -6f), new Vector3(h.x * 0.48f, h.y * 0.12f, 0.02f), mouthMat);
+
+        // Shirt ripped open across the belly, ribs showing through.
+        LowPolyKit.CreateBlock("Tear", torso, new Vector3(t.x * 0.12f, -t.y * 0.12f, front), new Vector3(0f, 0f, 8f), new Vector3(t.x * 0.42f, t.y * 0.34f, 0.02f), skinMat);
+        for (int i = 0; i < 3; i++)
+        {
+            LowPolyKit.CreateBlock("Rib", torso, new Vector3(t.x * 0.12f, -t.y * 0.02f - i * t.y * 0.09f, front + 0.008f), new Vector3(0f, 0f, 8f), new Vector3(t.x * 0.3f, 0.025f, 0.015f), boneMat);
+        }
+        LowPolyKit.CreateBlock("Blood", torso, new Vector3(-t.x * 0.22f, t.y * 0.18f, front), Vector3.zero, new Vector3(t.x * 0.26f, t.y * 0.2f, 0.02f), bloodMat);
+        LowPolyKit.CreateBlock("BloodDrip", torso, new Vector3(-t.x * 0.26f, t.y * 0.02f, front), Vector3.zero, new Vector3(t.x * 0.07f, t.y * 0.2f, 0.02f), bloodMat);
+        LowPolyKit.CreateBlock("BloodBack", torso, new Vector3(t.x * 0.15f, 0f, -front), Vector3.zero, new Vector3(t.x * 0.3f, t.y * 0.25f, 0.02f), bloodMat);
+
+        // Sleeves torn off at the elbow: the lower half of each arm is bare skin.
+        Vector3 forearm = new Vector3(p.armSize.x * 1.04f, p.armSize.y * 0.5f, p.armSize.z * 1.04f);
+        LowPolyKit.CreateBlock("ForearmL", rig.armLHinge, new Vector3(0f, -p.armSize.y * 0.75f, 0f), Vector3.zero, forearm, skinMat);
+        LowPolyKit.CreateBlock("ForearmR", rig.armRHinge, new Vector3(0f, -p.armSize.y * 0.75f, 0f), Vector3.zero, forearm, skinMat);
+
+        // Jeans over the legs, one leg ripped short.
+        Vector3 pantsSize = new Vector3(p.legSize.x * 1.05f, p.legSize.y * 0.82f, p.legSize.z * 1.05f);
+        LowPolyKit.CreateBlock("PantsL", rig.legLHinge, new Vector3(0f, -pantsSize.y * 0.5f, 0f), Vector3.zero, pantsSize, pantsMat);
+        LowPolyKit.CreateBlock("PantsR", rig.legRHinge, new Vector3(0f, -pantsSize.y * 0.32f, 0f), Vector3.zero, new Vector3(pantsSize.x, pantsSize.y * 0.64f, pantsSize.z), pantsMat);
+        LowPolyKit.CreateBlock("PelvisPants", rig.hips, new Vector3(0f, p.pelvisSize.y * 0.5f, 0f), Vector3.zero, p.pelvisSize * 1.04f, pantsMat);
     }
 
     private static Enemy GetOrCreateRunnerPrefab()
@@ -425,9 +489,9 @@ public static class ProjectSetup
         go.name = "EnemyRunner";
 
         CapsuleCollider collider = LowPolyKit.GetOrAddComponent<CapsuleCollider>(go);
-        collider.center = new Vector3(0f, 0.68f, 0f);
+        collider.center = new Vector3(0f, 0.74f, 0f);
         collider.radius = 0.28f;
-        collider.height = 1.36f;
+        collider.height = 1.48f;
 
         Health health = LowPolyKit.GetOrAddComponent<Health>(go);
         health.Configure(16f);
@@ -439,15 +503,17 @@ public static class ProjectSetup
 
         var colors = new CharacterFactory.BipedColors
         {
-            uniform = new Color(0.88f, 0.5f, 0.18f),
-            skin = new Color(0.62f, 0.5f, 0.42f),
-            headwear = new Color(0.12f, 0.12f, 0.13f),
-            accent = new Color(0.9f, 0.15f, 0.1f),
-            weaponBody = new Color(0.2f, 0.2f, 0.22f),
-            weaponDark = new Color(0.07f, 0.07f, 0.08f),
+            uniform = new Color(0.55f, 0.2f, 0.18f),
+            skin = new Color(0.64f, 0.68f, 0.62f),
+            headwear = new Color(0.1f, 0.1f, 0.1f),
+            accent = ZombieBlood,
+            weaponBody = new Color(0.55f, 0.2f, 0.18f),
+            weaponDark = new Color(0.5f, 0.54f, 0.5f),
         };
 
-        CharacterFactory.BipedRig rig = CharacterFactory.BuildBiped(go, CharacterFactory.RunnerProportions, colors, "Runner", hasWeapon: false);
+        CharacterFactory.BipedProportions p = CharacterFactory.Zombified(CharacterFactory.RunnerProportions, new Vector3(-58f, 6f, 0f), new Vector3(-70f, -6f, 0f), 6f);
+        CharacterFactory.BipedRig rig = CharacterFactory.BuildBiped(go, p, colors, "Runner", hasWeapon: false);
+        AddZombieDetails(rig, p, "Runner", colors.skin, new Color(0.2f, 0.2f, 0.22f), new Color(2.6f, 0.3f, 0.2f));
         ConfigureEnemyFeedback(enemy, colors.accent, 10, 0f, 0f);
         AddTeamRing(go.transform, 0.5f, EnemyRingColor);
 
@@ -461,7 +527,7 @@ public static class ProjectSetup
             torsoLeanExtra = 6f,
         };
 
-        CharacterFactory.BuildAnimations(go, rig, CharacterFactory.RunnerProportions, "Runner",
+        CharacterFactory.BuildAnimations(go, rig, p, "Runner",
             runnerGait, null, "Attack", 50f, 20f, false, out AnimatorController controller);
 
         Animator animator = LowPolyKit.GetOrAddComponent<Animator>(go);
@@ -481,9 +547,9 @@ public static class ProjectSetup
         go.name = "EnemyBrute";
 
         CapsuleCollider collider = LowPolyKit.GetOrAddComponent<CapsuleCollider>(go);
-        collider.center = new Vector3(0f, 1.1f, 0f);
+        collider.center = new Vector3(0f, 1.18f, 0f);
         collider.radius = 0.55f;
-        collider.height = 2.3f;
+        collider.height = 2.45f;
 
         Health health = LowPolyKit.GetOrAddComponent<Health>(go);
         health.Configure(120f);
@@ -495,22 +561,29 @@ public static class ProjectSetup
 
         var colors = new CharacterFactory.BipedColors
         {
-            uniform = new Color(0.45f, 0.22f, 0.45f),
-            skin = new Color(0.55f, 0.42f, 0.45f),
+            uniform = new Color(0.3f, 0.25f, 0.22f),
+            skin = new Color(0.42f, 0.5f, 0.4f),
             headwear = new Color(0.1f, 0.1f, 0.1f),
-            accent = new Color(0.9f, 0.4f, 0.1f),
-            weaponBody = new Color(0.18f, 0.18f, 0.19f),
-            weaponDark = new Color(0.08f, 0.08f, 0.08f),
+            accent = ZombieBlood,
+            weaponBody = new Color(0.3f, 0.25f, 0.22f),
+            weaponDark = new Color(0.34f, 0.4f, 0.32f),
         };
 
-        CharacterFactory.BipedRig rig = CharacterFactory.BuildBiped(go, CharacterFactory.BruteProportions, colors, "Brute", hasWeapon: false);
+        CharacterFactory.BipedProportions p = CharacterFactory.Zombified(CharacterFactory.BruteProportions, new Vector3(-48f, 0f, 0f), new Vector3(-38f, 0f, 0f), 10f);
+        CharacterFactory.BipedRig rig = CharacterFactory.BuildBiped(go, p, colors, "Brute", hasWeapon: false);
+        AddZombieDetails(rig, p, "Brute", colors.skin, new Color(0.22f, 0.2f, 0.18f), new Color(2.4f, 1f, 0.2f));
         ConfigureEnemyFeedback(enemy, colors.accent, 26, 0.15f, 0.2f);
         AddTeamRing(go.transform, 0.95f, EnemyRingColor);
 
-        Material pauldronMat = GetOrCreateMaterial("BruteAccent", colors.accent, unlit: true);
-        Vector3 pauldronSize = new Vector3(CharacterFactory.BruteProportions.armSize.x * 1.6f, 0.18f, CharacterFactory.BruteProportions.armSize.z * 1.6f);
-        LowPolyKit.CreateBlock("Pauldron", rig.armLHinge, new Vector3(0f, 0.1f, 0f), Vector3.zero, pauldronSize, pauldronMat);
-        LowPolyKit.CreateBlock("Pauldron", rig.armRHinge, new Vector3(0f, 0.1f, 0f), Vector3.zero, pauldronSize, pauldronMat);
+        // Bone spurs bursting out of the shoulders and back.
+        Material boneMat = GetOrCreateMaterial("ZombieBone", ZombieBone, unlit: false);
+        for (int side = -1; side <= 1; side += 2)
+        {
+            Vector3 shoulder = new Vector3(side * p.armSpacingX, p.armY + 0.12f, 0f);
+            LowPolyKit.CreateBlock("BoneSpur", rig.torso, shoulder, new Vector3(0f, 45f, side * -25f), new Vector3(0.12f, 0.42f, 0.12f), boneMat);
+            LowPolyKit.CreateBlock("BoneSpur", rig.torso, shoulder + new Vector3(-side * 0.16f, -0.05f, -0.12f), new Vector3(-20f, 45f, side * -15f), new Vector3(0.09f, 0.3f, 0.09f), boneMat);
+        }
+        LowPolyKit.CreateBlock("BackSpur", rig.torso, new Vector3(0f, 0.2f, -p.torsoSize.z * 0.5f - 0.05f), new Vector3(-50f, 45f, 0f), new Vector3(0.1f, 0.34f, 0.1f), boneMat);
 
         var bruteGait = new CharacterFactory.Gait
         {
@@ -522,7 +595,7 @@ public static class ProjectSetup
             torsoLeanExtra = 0f,
         };
 
-        CharacterFactory.BuildAnimations(go, rig, CharacterFactory.BruteProportions, "Brute",
+        CharacterFactory.BuildAnimations(go, rig, p, "Brute",
             bruteGait, null, "Attack", 55f, 18f, true, out AnimatorController controller);
 
         Animator animator = LowPolyKit.GetOrAddComponent<Animator>(go);
@@ -542,9 +615,9 @@ public static class ProjectSetup
         go.name = "EnemySpitter";
 
         CapsuleCollider collider = LowPolyKit.GetOrAddComponent<CapsuleCollider>(go);
-        collider.center = new Vector3(0f, 0.78f, 0f);
+        collider.center = new Vector3(0f, 0.85f, 0f);
         collider.radius = 0.36f;
-        collider.height = 1.56f;
+        collider.height = 1.7f;
 
         Health health = LowPolyKit.GetOrAddComponent<Health>(go);
         health.Configure(40f);
@@ -556,20 +629,25 @@ public static class ProjectSetup
 
         var colors = new CharacterFactory.BipedColors
         {
-            uniform = new Color(0.65f, 0.78f, 0.2f),
-            skin = new Color(0.55f, 0.65f, 0.35f),
-            headwear = new Color(0.2f, 0.26f, 0.18f),
-            accent = new Color(0.35f, 0.85f, 0.25f),
-            weaponBody = new Color(0.2f, 0.24f, 0.18f),
-            weaponDark = new Color(0.14f, 0.2f, 0.12f),
+            uniform = new Color(0.36f, 0.42f, 0.26f),
+            skin = new Color(0.62f, 0.7f, 0.36f),
+            headwear = new Color(0.16f, 0.18f, 0.12f),
+            accent = ZombieBlood,
+            weaponBody = new Color(0.36f, 0.42f, 0.26f),
+            weaponDark = new Color(0.5f, 0.58f, 0.3f),
         };
 
-        CharacterFactory.BipedRig rig = CharacterFactory.BuildBiped(go, CharacterFactory.SpitterProportions, colors, "Spitter", hasWeapon: false);
+        CharacterFactory.BipedProportions p = CharacterFactory.Zombified(CharacterFactory.SpitterProportions, new Vector3(-66f, 0f, 0f), new Vector3(-54f, 0f, 0f), 8f);
+        CharacterFactory.BipedRig rig = CharacterFactory.BuildBiped(go, p, colors, "Spitter", hasWeapon: false);
+        AddZombieDetails(rig, p, "Spitter", colors.skin, new Color(0.26f, 0.24f, 0.2f), new Color(0.6f, 2.4f, 0.4f));
         ConfigureEnemyFeedback(enemy, colors.accent, 14, 0f, 0f);
         AddTeamRing(go.transform, 0.6f, EnemyRingColor);
 
-        Material spitterAccentMat = GetOrCreateMaterial("SpitterAccent", colors.accent, unlit: true);
-        float torsoHalfDepth = CharacterFactory.SpitterProportions.torsoSize.z * 0.5f;
+        // Glowing acid: the sac on its back and a drip hanging from the mouth.
+        Material spitterAccentMat = GetOrCreateMaterial("SpitterAccent", new Color(0.5f, 1.8f, 0.3f), unlit: true);
+        float torsoHalfDepth = p.torsoSize.z * 0.5f;
+        float headCenterY = p.torsoSize.y * 0.5f + p.headSize.y * 0.5f - 0.02f;
+        LowPolyKit.CreateBlock("Drool", rig.torso, new Vector3(0.02f, headCenterY - p.headSize.y * 0.5f - 0.05f, p.headSize.z * 0.5f), Vector3.zero, new Vector3(0.05f, 0.14f, 0.05f), spitterAccentMat);
         LowPolyKit.CreateBlock("Sac", rig.torso, new Vector3(0f, 0.06f, -torsoHalfDepth - 0.1f), Vector3.zero, new Vector3(0.34f, 0.32f, 0.28f), spitterAccentMat, PrimitiveType.Sphere);
         LowPolyKit.CreateBlock("SacRidge", rig.torso, new Vector3(0f, 0.3f, -torsoHalfDepth - 0.02f), Vector3.zero, new Vector3(0.1f, 0.14f, 0.12f), spitterAccentMat);
 
@@ -583,7 +661,7 @@ public static class ProjectSetup
             torsoLeanExtra = 4f,
         };
 
-        CharacterFactory.BuildAnimations(go, rig, CharacterFactory.SpitterProportions, "Spitter",
+        CharacterFactory.BuildAnimations(go, rig, p, "Spitter",
             spitterGait, null, "Attack", 25f, 25f, false, out AnimatorController controller);
 
         Animator animator = LowPolyKit.GetOrAddComponent<Animator>(go);
@@ -603,9 +681,9 @@ public static class ProjectSetup
         go.name = "EnemyBomber";
 
         CapsuleCollider collider = LowPolyKit.GetOrAddComponent<CapsuleCollider>(go);
-        collider.center = new Vector3(0f, 0.8f, 0f);
+        collider.center = new Vector3(0f, 0.87f, 0f);
         collider.radius = 0.38f;
-        collider.height = 1.6f;
+        collider.height = 1.74f;
 
         Health health = LowPolyKit.GetOrAddComponent<Health>(go);
         health.Configure(25f);
@@ -618,24 +696,36 @@ public static class ProjectSetup
 
         var colors = new CharacterFactory.BipedColors
         {
-            uniform = new Color(0.4f, 0.38f, 0.44f),
-            skin = new Color(0.4f, 0.34f, 0.3f),
-            headwear = new Color(0.16f, 0.14f, 0.13f),
-            accent = new Color(0.95f, 0.4f, 0.05f),
-            weaponBody = new Color(0.2f, 0.2f, 0.21f),
-            weaponDark = new Color(0.08f, 0.08f, 0.09f),
+            uniform = new Color(0.4f, 0.36f, 0.42f),
+            skin = new Color(0.6f, 0.56f, 0.42f),
+            headwear = new Color(0.14f, 0.12f, 0.1f),
+            accent = ZombieBlood,
+            weaponBody = new Color(0.4f, 0.36f, 0.42f),
+            weaponDark = new Color(0.48f, 0.44f, 0.34f),
         };
 
-        CharacterFactory.BipedRig rig = CharacterFactory.BuildBiped(go, CharacterFactory.BomberProportions, colors, "Bomber", hasWeapon: false);
+        CharacterFactory.BipedProportions p = CharacterFactory.Zombified(CharacterFactory.BomberProportions, new Vector3(-70f, 6f, 0f), new Vector3(-80f, -6f, 0f), 6f);
+        CharacterFactory.BipedRig rig = CharacterFactory.BuildBiped(go, p, colors, "Bomber", hasWeapon: false);
+        AddZombieDetails(rig, p, "Bomber", colors.skin, new Color(0.3f, 0.28f, 0.3f), new Color(2.6f, 1.2f, 0.2f));
         ConfigureEnemyFeedback(enemy, colors.accent, 22, 0.35f, 0f);
         AddTeamRing(go.transform, 0.6f, EnemyRingColor);
 
-        Material bomberPlateMat = GetOrCreateMaterial("BomberPlate", new Color(0.22f, 0.2f, 0.18f), unlit: false);
-        Material bomberAccentMat = GetOrCreateMaterial("BomberAccent", colors.accent, unlit: true);
-        float torsoHalfDepth = CharacterFactory.BomberProportions.torsoSize.z * 0.5f;
-        LowPolyKit.CreateBlock("CanisterL", rig.torso, new Vector3(-0.14f, 0.1f, -torsoHalfDepth - 0.14f), Vector3.zero, new Vector3(0.16f, 0.5f, 0.16f), bomberPlateMat, PrimitiveType.Cylinder);
-        LowPolyKit.CreateBlock("CanisterR", rig.torso, new Vector3(0.14f, 0.1f, -torsoHalfDepth - 0.14f), Vector3.zero, new Vector3(0.16f, 0.5f, 0.16f), bomberPlateMat, PrimitiveType.Cylinder);
-        LowPolyKit.CreateBlock("WarningStripe", rig.torso, new Vector3(0f, 0.1f, -torsoHalfDepth - 0.14f), Vector3.zero, new Vector3(0.36f, 0.08f, 0.2f), bomberAccentMat);
+        // Swollen, glowing boils all over - the tell that this one bursts.
+        Material bomberAccentMat = GetOrCreateMaterial("BomberAccent", new Color(2.6f, 1.1f, 0.15f), unlit: true);
+        float torsoHalfDepth = p.torsoSize.z * 0.5f;
+        float torsoHalfWidth = p.torsoSize.x * 0.5f;
+        Vector3[] boils =
+        {
+            new Vector3(0.12f, 0.12f, torsoHalfDepth), new Vector3(-0.16f, -0.12f, torsoHalfDepth),
+            new Vector3(0.05f, -0.2f, torsoHalfDepth), new Vector3(-0.1f, 0.18f, -torsoHalfDepth),
+            new Vector3(0.14f, -0.05f, -torsoHalfDepth), new Vector3(torsoHalfWidth, 0.05f, 0.04f),
+            new Vector3(-torsoHalfWidth, -0.1f, -0.05f),
+        };
+        for (int i = 0; i < boils.Length; i++)
+        {
+            float size = 0.12f + (i % 3) * 0.04f;
+            LowPolyKit.CreateBlock("Boil", rig.torso, boils[i], Vector3.zero, Vector3.one * size, bomberAccentMat, PrimitiveType.Sphere);
+        }
 
         var bomberGait = new CharacterFactory.Gait
         {
@@ -647,7 +737,7 @@ public static class ProjectSetup
             torsoLeanExtra = 0f,
         };
 
-        CharacterFactory.BuildAnimations(go, rig, CharacterFactory.BomberProportions, "Bomber",
+        CharacterFactory.BuildAnimations(go, rig, p, "Bomber",
             bomberGait, null, "Attack", 60f, 15f, true, out AnimatorController controller);
 
         Animator animator = LowPolyKit.GetOrAddComponent<Animator>(go);
@@ -667,9 +757,9 @@ public static class ProjectSetup
         go.name = "EnemyEngineer";
 
         CapsuleCollider collider = LowPolyKit.GetOrAddComponent<CapsuleCollider>(go);
-        collider.center = new Vector3(0f, 0.82f, 0f);
+        collider.center = new Vector3(0f, 0.89f, 0f);
         collider.radius = 0.34f;
-        collider.height = 1.64f;
+        collider.height = 1.78f;
 
         Health health = LowPolyKit.GetOrAddComponent<Health>(go);
         health.Configure(35f);
@@ -681,15 +771,17 @@ public static class ProjectSetup
 
         var colors = new CharacterFactory.BipedColors
         {
-            uniform = new Color(0.9f, 0.74f, 0.2f),
-            skin = new Color(0.72f, 0.55f, 0.44f),
+            uniform = new Color(0.85f, 0.7f, 0.2f),
+            skin = new Color(0.52f, 0.62f, 0.44f),
             headwear = new Color(0.95f, 0.55f, 0.08f),
-            accent = new Color(0.95f, 0.6f, 0.1f),
-            weaponBody = new Color(0.2f, 0.2f, 0.22f),
-            weaponDark = new Color(0.1f, 0.1f, 0.11f),
+            accent = ZombieBlood,
+            weaponBody = new Color(0.85f, 0.7f, 0.2f),
+            weaponDark = new Color(0.42f, 0.5f, 0.36f),
         };
 
-        CharacterFactory.BipedRig rig = CharacterFactory.BuildBiped(go, CharacterFactory.EngineerProportions, colors, "Engineer", hasWeapon: false);
+        CharacterFactory.BipedProportions p = CharacterFactory.Zombified(CharacterFactory.EngineerProportions, new Vector3(-80f, 4f, 0f), new Vector3(-55f, -4f, 0f), 10f);
+        CharacterFactory.BipedRig rig = CharacterFactory.BuildBiped(go, p, colors, "Engineer", hasWeapon: false);
+        AddZombieDetails(rig, p, "Engineer", colors.skin, new Color(0.22f, 0.26f, 0.36f), new Color(2.4f, 2f, 0.3f));
         ConfigureEnemyFeedback(enemy, colors.accent, 14, 0f, 0f);
         AddTeamRing(go.transform, 0.6f, EnemyRingColor);
 
@@ -699,8 +791,8 @@ public static class ProjectSetup
         if (autoFist != null) Object.DestroyImmediate(autoFist.gameObject);
 
         Material engineerTankMat = GetOrCreateMaterial("EngineerTank", new Color(0.3f, 0.3f, 0.32f), unlit: false);
-        Material engineerAccentMat = GetOrCreateMaterial("EngineerAccent", colors.accent, unlit: true);
-        float torsoHalfDepth = CharacterFactory.EngineerProportions.torsoSize.z * 0.5f;
+        Material engineerAccentMat = GetOrCreateMaterial("EngineerAccent", new Color(0.95f, 0.6f, 0.1f), unlit: true);
+        float torsoHalfDepth = p.torsoSize.z * 0.5f;
         LowPolyKit.CreateBlock("Tank", rig.torso, new Vector3(0f, 0.1f, -torsoHalfDepth - 0.1f), Vector3.zero, new Vector3(0.24f, 0.4f, 0.2f), engineerTankMat);
         LowPolyKit.CreateBlock("TankStripe", rig.torso, new Vector3(0f, 0.1f, -torsoHalfDepth), Vector3.zero, new Vector3(0.2f, 0.08f, 0.05f), engineerAccentMat);
         LowPolyKit.CreateBlock("ToolHandle", rig.weaponSocket, new Vector3(0f, -0.05f, 0.1f), new Vector3(20f, 0f, 0f), new Vector3(0.04f, 0.24f, 0.04f), engineerTankMat);
@@ -720,7 +812,7 @@ public static class ProjectSetup
         // Engineer's Repair-tap motion lives in the same Attack state/clip slot rather than
         // a separate parameter - adding a per-type trigger name would be a gameplay change,
         // not a visual one.
-        CharacterFactory.BuildAnimations(go, rig, CharacterFactory.EngineerProportions, "Engineer",
+        CharacterFactory.BuildAnimations(go, rig, p, "Engineer",
             engineerGait, null, "Attack", 20f, 6f, false, out AnimatorController controller);
 
         Animator animator = LowPolyKit.GetOrAddComponent<Animator>(go);
@@ -758,6 +850,23 @@ public static class ProjectSetup
         }
         LowPolyKit.CreateBlock("PlankBand", go.transform, new Vector3(0f, 0.7f, 0f), Vector3.zero, new Vector3(2.84f, 0.16f, 2.84f), woodMat);
 
+        // Mortar lines, pale corner stones and moss: enough texture to read as masonry without a
+        // per-brick block count that would hurt phones (the ring alone is 28 of these).
+        Material mortarMat = GetOrCreateMaterial("WallMortar", new Color(0.3f, 0.28f, 0.26f), unlit: false);
+        Material quoinMat = GetOrCreateMaterial("WallQuoin", new Color(0.74f, 0.7f, 0.64f), unlit: false);
+        Material mossMat = GetOrCreateMaterial("WallMoss", new Color(0.3f, 0.45f, 0.2f), unlit: false);
+        LowPolyKit.CreateBlock("MortarLow", go.transform, new Vector3(0f, 0.42f, 0f), Vector3.zero, new Vector3(2.82f, 0.04f, 2.82f), mortarMat);
+        LowPolyKit.CreateBlock("MortarHigh", go.transform, new Vector3(0f, 1.12f, 0f), Vector3.zero, new Vector3(2.82f, 0.04f, 2.82f), mortarMat);
+        for (int x = -1; x <= 1; x += 2)
+        {
+            for (int z = -1; z <= 1; z += 2)
+            {
+                LowPolyKit.CreateBlock("Quoin", go.transform, new Vector3(x * 1.32f, 0.8f, z * 1.32f), Vector3.zero, new Vector3(0.2f, 1.18f, 0.2f), quoinMat);
+            }
+        }
+        LowPolyKit.CreateBlock("Moss", go.transform, new Vector3(0.4f, 1.5f, -0.3f), Vector3.zero, new Vector3(1.1f, 0.03f, 0.8f), mossMat);
+        LowPolyKit.CreateBlock("MossDrip", go.transform, new Vector3(-0.7f, 1.2f, 1.41f), Vector3.zero, new Vector3(0.5f, 0.45f, 0.03f), mossMat);
+
         BoxCollider collider = LowPolyKit.GetOrAddComponent<BoxCollider>(go);
         collider.center = new Vector3(0f, 0.95f, 0f);
         collider.size = new Vector3(2.9f, 1.9f, 2.9f);
@@ -780,9 +889,9 @@ public static class ProjectSetup
         go.name = "Boss";
 
         CapsuleCollider collider = LowPolyKit.GetOrAddComponent<CapsuleCollider>(go);
-        collider.center = new Vector3(0f, 2.7f, 0f);
+        collider.center = new Vector3(0f, 2.82f, 0f);
         collider.radius = 1.1f;
-        collider.height = 5.5f;
+        collider.height = 5.75f;
 
         Health health = LowPolyKit.GetOrAddComponent<Health>(go);
         health.Configure(1200f);
@@ -795,27 +904,34 @@ public static class ProjectSetup
 
         var colors = new CharacterFactory.BipedColors
         {
-            uniform = new Color(0.32f, 0.1f, 0.14f),
-            skin = new Color(0.22f, 0.12f, 0.15f),
-            headwear = new Color(0.1f, 0.1f, 0.11f),
-            accent = new Color(0.95f, 0.3f, 0.08f),
-            weaponBody = new Color(0.14f, 0.14f, 0.15f),
-            weaponDark = new Color(0.08f, 0.08f, 0.08f),
+            uniform = new Color(0.24f, 0.12f, 0.12f),
+            skin = new Color(0.32f, 0.38f, 0.28f),
+            headwear = new Color(0.08f, 0.08f, 0.08f),
+            accent = ZombieBlood,
+            weaponBody = new Color(0.24f, 0.12f, 0.12f),
+            weaponDark = new Color(0.26f, 0.3f, 0.22f),
         };
 
         CharacterFactory.BipedRig rig = CharacterFactory.BuildBiped(go, CharacterFactory.BossProportions, colors, "Boss", hasWeapon: false);
         ConfigureEnemyFeedback(enemy, colors.accent, 70, 0.5f, 1f);
+        AddZombieDetails(rig, CharacterFactory.BossProportions, "Boss", colors.skin, new Color(0.18f, 0.14f, 0.12f), new Color(3f, 0.25f, 0.15f));
         AddTeamRing(go.transform, 1.9f, EnemyRingColor);
 
-        Material bossAccentMat = GetOrCreateMaterial("BossAccent", colors.accent, unlit: true);
+        Material bossAccentMat = GetOrCreateMaterial("BossAccent", new Color(2.4f, 0.3f, 0.15f), unlit: true);
+        Material boneMat = GetOrCreateMaterial("ZombieBone", ZombieBone, unlit: false);
         CharacterFactory.BipedProportions bp = CharacterFactory.BossProportions;
 
         Vector3 pauldronSize = new Vector3(bp.armSize.x * 1.8f, 0.32f, bp.armSize.z * 1.8f);
-        LowPolyKit.CreateBlock("Pauldron", rig.armLHinge, new Vector3(0f, 0.16f, 0f), Vector3.zero, pauldronSize, bossAccentMat);
-        LowPolyKit.CreateBlock("Pauldron", rig.armRHinge, new Vector3(0f, 0.16f, 0f), Vector3.zero, pauldronSize, bossAccentMat);
+        LowPolyKit.CreateBlock("Pauldron", rig.armLHinge, new Vector3(0f, 0.16f, 0f), Vector3.zero, pauldronSize, boneMat);
+        LowPolyKit.CreateBlock("Pauldron", rig.armRHinge, new Vector3(0f, 0.16f, 0f), Vector3.zero, pauldronSize, boneMat);
+        for (int i = 0; i < 3; i++)
+        {
+            float x = (i - 1) * 0.45f;
+            LowPolyKit.CreateBlock("BackSpur", rig.torso, new Vector3(x, 0.5f - Mathf.Abs(x) * 0.4f, -bp.torsoSize.z * 0.5f - 0.1f), new Vector3(-45f, 45f, 0f), new Vector3(0.22f, 0.7f, 0.22f), boneMat);
+        }
 
+        // A glowing wound where the old chest light was.
         LowPolyKit.CreateBlock("CoreLight", rig.torso, new Vector3(0f, 0.3f, bp.torsoSize.z * 0.5f + 0.02f), Vector3.zero, new Vector3(0.4f, 0.4f, 0.08f), bossAccentMat);
-        LowPolyKit.CreateBlock("Visor", rig.torso, new Vector3(0f, bp.torsoSize.y * 0.5f + bp.headSize.y * 0.5f - 0.02f, bp.headSize.z * 0.5f - 0.02f), Vector3.zero, new Vector3(bp.headSize.x * 0.7f, 0.08f, 0.05f), bossAccentMat);
 
         float fistSize = bp.armSize.x * 1.5f;
         LowPolyKit.CreateBlock("KnuckleGlow", rig.weaponSocket, new Vector3(0f, 0f, fistSize * 0.4f), Vector3.zero, new Vector3(fistSize * 0.5f, fistSize * 0.5f, 0.04f), bossAccentMat);
@@ -846,29 +962,45 @@ public static class ProjectSetup
         Missile,
     }
 
+    // Every tower: a stone plinth and body with a band in the tower's card colour (so it matches the
+    // build button), a turret ring, and a style-specific turret on a pivot the Tower script yaws.
     private static Tower GetOrCreateTowerPrefab(string prefabName, TowerStyle style, Color baseColor, Color accentColor, float scale, float range, float fireRate, float damage, Projectile projectilePrefab)
     {
         string path = $"{PrefabFolder}/{prefabName}.prefab";
         GameObject baseGo = LowPolyKit.BeginPrefabEdit(path, out bool wasLoaded);
         LowPolyKit.ClearChildren(baseGo);
+        LowPolyKit.RemoveOwnMesh(baseGo);
         baseGo.name = prefabName;
+        baseGo.transform.localScale = Vector3.one * scale;
 
-        LowPolyKit.SetPrimitiveMesh(baseGo, PrimitiveType.Cube);
-        baseGo.transform.localScale = new Vector3(scale, scale, scale);
-        baseGo.GetComponent<Renderer>().sharedMaterial = GetOrCreateMaterial($"{prefabName}Base", baseColor, unlit: false);
+        Material plinthMat = GetOrCreateMaterial("TowerPlinth", new Color(0.4f, 0.38f, 0.36f), unlit: false);
+        Material bodyMat = GetOrCreateMaterial($"{prefabName}Base", baseColor, unlit: false);
+        Material trimMat = GetOrCreateMaterial("TowerTrim", new Color(0.2f, 0.2f, 0.22f), unlit: false);
+        Material bandMat = GetOrCreateMaterial($"{prefabName}Band", accentColor, unlit: true);
 
-        GameObject turretPivot = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        turretPivot.name = "TurretPivot";
+        LowPolyKit.CreateBlock("Plinth", baseGo.transform, new Vector3(0f, 0.12f, 0f), new Vector3(0f, 22.5f, 0f), new Vector3(2.1f, 0.12f, 2.1f), plinthMat, PrimitiveType.Cylinder);
+        LowPolyKit.CreateBlock("Body", baseGo.transform, new Vector3(0f, 0.65f, 0f), Vector3.zero, new Vector3(1.4f, 0.85f, 1.4f), bodyMat);
+        for (int x = -1; x <= 1; x += 2)
+        {
+            for (int z = -1; z <= 1; z += 2)
+            {
+                LowPolyKit.CreateBlock("Buttress", baseGo.transform, new Vector3(x * 0.68f, 0.5f, z * 0.68f), Vector3.zero, new Vector3(0.24f, 0.8f, 0.24f), trimMat);
+            }
+        }
+        LowPolyKit.CreateBlock("Band", baseGo.transform, new Vector3(0f, 0.92f, 0f), Vector3.zero, new Vector3(1.44f, 0.1f, 1.44f), bandMat);
+        LowPolyKit.CreateBlock("Ring", baseGo.transform, new Vector3(0f, 1.12f, 0f), Vector3.zero, new Vector3(1.25f, 0.06f, 1.25f), trimMat, PrimitiveType.Cylinder);
+
+        BoxCollider collider = LowPolyKit.GetOrAddComponent<BoxCollider>(baseGo);
+        collider.center = new Vector3(0f, 0.8f, 0f);
+        collider.size = new Vector3(1.6f, 1.6f, 1.6f);
+
+        GameObject turretPivot = new GameObject("TurretPivot");
         turretPivot.transform.SetParent(baseGo.transform, false);
-        turretPivot.transform.localPosition = new Vector3(0f, 0.75f, 0f);
-        turretPivot.transform.localScale = new Vector3(0.5f / scale, 0.5f / scale, 0.5f / scale);
-        turretPivot.GetComponent<Renderer>().sharedMaterial = GetOrCreateMaterial($"{prefabName}Turret", accentColor, unlit: false);
+        turretPivot.transform.localPosition = new Vector3(0f, 1.2f, 0f);
 
         GameObject firePoint = new GameObject("FirePoint");
         firePoint.transform.SetParent(turretPivot.transform, false);
-        firePoint.transform.localPosition = new Vector3(0f, 0f, 1f);
-
-        AddTowerAccessories(turretPivot.transform, style, accentColor);
+        firePoint.transform.localPosition = BuildTurret(turretPivot.transform, style, accentColor);
 
         Tower tower = LowPolyKit.GetOrAddComponent<Tower>(baseGo);
         tower.Configure(projectilePrefab, firePoint.transform, turretPivot.transform);
@@ -878,79 +1010,122 @@ public static class ProjectSetup
         return prefab.GetComponent<Tower>();
     }
 
-    private static void AddTowerAccessories(Transform turretPivot, TowerStyle style, Color accentColor)
+    // Builds the turret for `style` on the pivot (forward = +Z) and returns where shots leave it.
+    private static Vector3 BuildTurret(Transform pivot, TowerStyle style, Color accentColor)
     {
-        Material barrelMat = GetOrCreateMaterial("BarrelDark", new Color(0.15f, 0.15f, 0.17f), unlit: false);
+        Material gunMetal = GetOrCreateMaterial("BarrelDark", new Color(0.15f, 0.15f, 0.17f), unlit: false);
+        Material steel = GetOrCreateMaterial("TowerSteel", new Color(0.34f, 0.36f, 0.4f), unlit: false);
+        Material accentGlow = GetOrCreateMaterial($"TowerGlow{style}", accentColor * 1.8f, unlit: true);
 
         switch (style)
         {
             case TowerStyle.Gun:
-                Material housingMat = GetOrCreateMaterial("TowerGunHousing", new Color(0.22f, 0.22f, 0.25f), unlit: false);
-                Material ammoMat = GetOrCreateMaterial("TowerGunAmmo", new Color(0.35f, 0.24f, 0.14f), unlit: false);
+            {
+                Material sandbagMat = GetOrCreateMaterial("Sandbag", new Color(0.62f, 0.55f, 0.38f), unlit: false);
+                Material brassMat = GetOrCreateMaterial("AmmoBrass", new Color(0.85f, 0.65f, 0.25f), unlit: false);
 
-                LowPolyKit.CreateBlock("Housing", turretPivot, new Vector3(0f, 0.02f, -0.08f), Vector3.zero, new Vector3(0.62f, 0.3f, 0.6f), housingMat);
-                LowPolyKit.CreateBlock("Sight", turretPivot, new Vector3(0f, 0.22f, 0.05f), Vector3.zero, new Vector3(0.08f, 0.1f, 0.25f), housingMat);
-                LowPolyKit.CreateBlock("AmmoBoxL", turretPivot, new Vector3(-0.3f, -0.02f, -0.15f), new Vector3(0f, 15f, 0f), new Vector3(0.16f, 0.22f, 0.2f), ammoMat);
-                LowPolyKit.CreateBlock("AmmoBoxR", turretPivot, new Vector3(0.3f, -0.02f, -0.15f), new Vector3(0f, -15f, 0f), new Vector3(0.16f, 0.22f, 0.2f), ammoMat);
-
-                AddBarrel(turretPivot, new Vector3(0.16f, 0f, 0.55f), new Vector3(90f, 0f, 0f), 0.55f, 0.08f, barrelMat, null);
-                AddBarrel(turretPivot, new Vector3(-0.16f, 0f, 0.55f), new Vector3(90f, 0f, 0f), 0.55f, 0.08f, barrelMat, null);
-                break;
-
-            case TowerStyle.Cannon:
-                Material cannonPlateMat = GetOrCreateMaterial("TowerCannonPlate", new Color(0.28f, 0.24f, 0.2f), unlit: false);
-                Material cannonTrimMat = GetOrCreateMaterial("TowerCannonTrim", new Color(0.15f, 0.13f, 0.1f), unlit: false);
-
-                LowPolyKit.CreateBlock("Housing", turretPivot, new Vector3(0f, 0f, -0.15f), Vector3.zero, new Vector3(0.7f, 0.4f, 0.55f), cannonPlateMat);
-                LowPolyKit.CreateBlock("PlateL", turretPivot, new Vector3(-0.38f, 0f, 0.1f), Vector3.zero, new Vector3(0.1f, 0.32f, 0.7f), cannonTrimMat);
-                LowPolyKit.CreateBlock("PlateR", turretPivot, new Vector3(0.38f, 0f, 0.1f), Vector3.zero, new Vector3(0.1f, 0.32f, 0.7f), cannonTrimMat);
-                LowPolyKit.CreateBlock("Hatch", turretPivot, new Vector3(0f, 0.24f, -0.2f), Vector3.zero, new Vector3(0.3f, 0.08f, 0.3f), cannonTrimMat);
-                LowPolyKit.CreateBlock("RecoilSleeve", turretPivot, new Vector3(0f, 0f, 0.4f), new Vector3(90f, 0f, 0f), new Vector3(0.34f, 0.16f, 0.34f), cannonTrimMat, PrimitiveType.Cylinder);
-
-                AddBarrel(turretPivot, new Vector3(0f, 0f, 0.85f), new Vector3(90f, 0f, 0f), 1.0f, 0.24f, barrelMat, null);
-                break;
-
-            case TowerStyle.Sniper:
-                AddBarrel(turretPivot, new Vector3(0f, 0.05f, 1.3f), new Vector3(90f, 0f, 0f), 2.0f, 0.07f, barrelMat, null);
-                break;
-
-            case TowerStyle.Missile:
-                AddBarrel(turretPivot, new Vector3(0.22f, 0.1f, 0.45f), new Vector3(75f, 0f, 0f), 0.7f, 0.1f, barrelMat, new Color(0.85f, 0.15f, 0.1f));
-                AddBarrel(turretPivot, new Vector3(-0.22f, 0.1f, 0.45f), new Vector3(75f, 0f, 0f), 0.7f, 0.1f, barrelMat, new Color(0.85f, 0.15f, 0.1f));
-                break;
-
-            case TowerStyle.Tesla:
-                Material accentMat = GetOrCreateMaterial("TeslaAccent", accentColor, unlit: true);
-                Material capacitorMat = GetOrCreateMaterial("TeslaCapacitor", new Color(0.16f, 0.18f, 0.22f), unlit: false);
-
-                LowPolyKit.CreateBlock("CapacitorL", turretPivot, new Vector3(-0.28f, -0.12f, 0f), Vector3.zero, new Vector3(0.16f, 0.3f, 0.16f), capacitorMat);
-                LowPolyKit.CreateBlock("CapacitorR", turretPivot, new Vector3(0.28f, -0.12f, 0f), Vector3.zero, new Vector3(0.16f, 0.3f, 0.16f), capacitorMat);
-
-                float[] prongAngles = { 0f, 90f, 180f, 270f };
-                foreach (float prongAngle in prongAngles)
+                // Sandbags sit on the base ring and don't turn with the gun.
+                for (int i = 0; i < 6; i++)
                 {
-                    Vector3 prongDir = Quaternion.Euler(0f, prongAngle, 0f) * Vector3.forward;
-                    LowPolyKit.CreateBlock("Prong", turretPivot, prongDir * 0.2f + new Vector3(0f, 0.55f, 0f), new Vector3(0f, prongAngle, 25f), new Vector3(0.03f, 0.2f, 0.03f), accentMat);
+                    float angle = i * 60f + 30f;
+                    Vector3 pos = Quaternion.Euler(0f, angle, 0f) * Vector3.forward * 0.58f;
+                    LowPolyKit.CreateBlock("Sandbag", pivot.parent, pos + new Vector3(0f, 1.24f, 0f), new Vector3(0f, angle, 0f), new Vector3(0.5f, 0.18f, 0.26f), sandbagMat);
                 }
 
-                GameObject coil = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-                coil.name = "Coil";
-                Object.DestroyImmediate(coil.GetComponent<Collider>());
-                coil.transform.SetParent(turretPivot, false);
-                coil.transform.localPosition = new Vector3(0f, 0.35f, 0f);
-                coil.transform.localScale = new Vector3(0.18f, 0.35f, 0.18f);
-                coil.GetComponent<Renderer>().sharedMaterial = accentMat;
+                LowPolyKit.CreateBlock("Housing", pivot, new Vector3(0f, 0.22f, -0.05f), Vector3.zero, new Vector3(0.62f, 0.36f, 0.66f), steel);
+                LowPolyKit.CreateBlock("Shield", pivot, new Vector3(0f, 0.32f, 0.36f), new Vector3(-12f, 0f, 0f), new Vector3(0.9f, 0.55f, 0.06f), gunMetal);
+                LowPolyKit.CreateBlock("AmmoBox", pivot, new Vector3(0.42f, 0.16f, -0.1f), Vector3.zero, new Vector3(0.2f, 0.26f, 0.32f), gunMetal);
+                LowPolyKit.CreateBlock("AmmoBelt", pivot, new Vector3(0.3f, 0.26f, 0.08f), new Vector3(0f, 0f, 30f), new Vector3(0.22f, 0.05f, 0.08f), brassMat);
+                for (int side = -1; side <= 1; side += 2)
+                {
+                    AddBarrel(pivot, new Vector3(side * 0.13f, 0.24f, 0.78f), new Vector3(90f, 0f, 0f), 0.95f, 0.09f, gunMetal, null);
+                    LowPolyKit.CreateBlock("MuzzleBrake", pivot, new Vector3(side * 0.13f, 0.24f, 1.24f), new Vector3(90f, 0f, 0f), new Vector3(0.14f, 0.06f, 0.14f), steel, PrimitiveType.Cylinder);
+                }
+                return new Vector3(0f, 0.24f, 1.3f);
+            }
 
-                GameObject orb = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                orb.name = "Orb";
-                Object.DestroyImmediate(orb.GetComponent<Collider>());
-                orb.transform.SetParent(turretPivot, false);
-                orb.transform.localPosition = new Vector3(0f, 0.75f, 0f);
-                orb.transform.localScale = new Vector3(0.35f, 0.35f, 0.35f);
-                orb.GetComponent<Renderer>().sharedMaterial = accentMat;
+            case TowerStyle.Cannon:
+            {
+                Material bronzeMat = GetOrCreateMaterial("CannonBronze", new Color(0.62f, 0.42f, 0.2f), unlit: false);
+                LowPolyKit.CreateBlock("Dome", pivot, new Vector3(0f, 0.18f, -0.1f), Vector3.zero, new Vector3(1.05f, 0.7f, 1.05f), steel, PrimitiveType.Sphere);
+                LowPolyKit.CreateBlock("Mantlet", pivot, new Vector3(0f, 0.3f, 0.38f), Vector3.zero, new Vector3(0.6f, 0.42f, 0.24f), gunMetal);
+                AddBarrel(pivot, new Vector3(0f, 0.32f, 1.0f), new Vector3(90f, 0f, 0f), 1.3f, 0.3f, bronzeMat, null);
+                LowPolyKit.CreateBlock("BandRear", pivot, new Vector3(0f, 0.32f, 0.62f), new Vector3(90f, 0f, 0f), new Vector3(0.36f, 0.05f, 0.36f), gunMetal, PrimitiveType.Cylinder);
+                LowPolyKit.CreateBlock("BandMid", pivot, new Vector3(0f, 0.32f, 1.05f), new Vector3(90f, 0f, 0f), new Vector3(0.34f, 0.04f, 0.34f), gunMetal, PrimitiveType.Cylinder);
+                LowPolyKit.CreateBlock("MuzzleRing", pivot, new Vector3(0f, 0.32f, 1.62f), new Vector3(90f, 0f, 0f), new Vector3(0.4f, 0.07f, 0.4f), bronzeMat, PrimitiveType.Cylinder);
+                LowPolyKit.CreateBlock("Hatch", pivot, new Vector3(0f, 0.55f, -0.25f), Vector3.zero, new Vector3(0.3f, 0.06f, 0.3f), gunMetal, PrimitiveType.Cylinder);
+                return new Vector3(0f, 0.32f, 1.7f);
+            }
+
+            case TowerStyle.Sniper:
+            {
+                Material woodMat = GetOrCreateMaterial("SniperStock", new Color(0.42f, 0.28f, 0.16f), unlit: false);
+                LowPolyKit.CreateBlock("Mount", pivot, new Vector3(0f, 0.12f, 0f), Vector3.zero, new Vector3(0.3f, 0.24f, 0.3f), steel);
+                LowPolyKit.CreateBlock("Receiver", pivot, new Vector3(0f, 0.3f, 0.1f), Vector3.zero, new Vector3(0.16f, 0.16f, 0.6f), gunMetal);
+                LowPolyKit.CreateBlock("Stock", pivot, new Vector3(0f, 0.26f, -0.42f), new Vector3(8f, 0f, 0f), new Vector3(0.12f, 0.2f, 0.5f), woodMat);
+                AddBarrel(pivot, new Vector3(0f, 0.3f, 1.25f), new Vector3(90f, 0f, 0f), 1.7f, 0.07f, gunMetal, null);
+                LowPolyKit.CreateBlock("Scope", pivot, new Vector3(0f, 0.46f, 0.14f), new Vector3(90f, 0f, 0f), new Vector3(0.1f, 0.24f, 0.1f), gunMetal, PrimitiveType.Cylinder);
+                LowPolyKit.CreateBlock("Lens", pivot, new Vector3(0f, 0.46f, 0.39f), new Vector3(90f, 0f, 0f), new Vector3(0.09f, 0.01f, 0.09f), accentGlow, PrimitiveType.Cylinder);
+                LowPolyKit.CreateBlock("BipodL", pivot, new Vector3(-0.1f, 0.14f, 0.85f), new Vector3(0f, 0f, 20f), new Vector3(0.03f, 0.3f, 0.03f), gunMetal);
+                LowPolyKit.CreateBlock("BipodR", pivot, new Vector3(0.1f, 0.14f, 0.85f), new Vector3(0f, 0f, -20f), new Vector3(0.03f, 0.3f, 0.03f), gunMetal);
+                return new Vector3(0f, 0.3f, 2.1f);
+            }
+
+            case TowerStyle.Missile:
+            {
+                Material podMat = GetOrCreateMaterial("MissilePod", new Color(0.36f, 0.4f, 0.3f), unlit: false);
+                Material warheadMat = GetOrCreateMaterial("MissileTip", new Color(0.85f, 0.15f, 0.1f), unlit: true);
+                LowPolyKit.CreateBlock("Yoke", pivot, new Vector3(0f, 0.15f, 0f), Vector3.zero, new Vector3(0.9f, 0.3f, 0.5f), steel);
+
+                // Launcher pod tilted up, 2x2 tubes each with a red warhead peeking out.
+                GameObject pod = new GameObject("Pod");
+                pod.transform.SetParent(pivot, false);
+                pod.transform.localPosition = new Vector3(0f, 0.55f, 0.05f);
+                pod.transform.localRotation = Quaternion.Euler(-18f, 0f, 0f);
+                LowPolyKit.CreateBlock("Box", pod.transform, Vector3.zero, Vector3.zero, new Vector3(0.9f, 0.62f, 0.95f), podMat);
+                LowPolyKit.CreateBlock("Stripe", pod.transform, new Vector3(0f, 0f, -0.2f), Vector3.zero, new Vector3(0.92f, 0.1f, 0.2f), accentGlow);
+                for (int x = -1; x <= 1; x += 2)
+                {
+                    for (int y = -1; y <= 1; y += 2)
+                    {
+                        Vector3 tube = new Vector3(x * 0.2f, y * 0.14f, 0.48f);
+                        LowPolyKit.CreateBlock("Tube", pod.transform, tube, new Vector3(90f, 0f, 0f), new Vector3(0.2f, 0.03f, 0.2f), gunMetal, PrimitiveType.Cylinder);
+                        LowPolyKit.CreateBlock("Warhead", pod.transform, tube + new Vector3(0f, 0f, 0.03f), Vector3.zero, new Vector3(0.14f, 0.14f, 0.16f), warheadMat, PrimitiveType.Sphere);
+                    }
+                }
+                return new Vector3(0f, 0.75f, 0.65f);
+            }
+
+            case TowerStyle.Tesla:
+            {
+                Material copperMat = GetOrCreateMaterial("TeslaCopper", new Color(0.75f, 0.42f, 0.22f), unlit: false);
+                Material insulatorMat = GetOrCreateMaterial("TeslaInsulator", new Color(0.85f, 0.85f, 0.8f), unlit: false);
+
+                LowPolyKit.CreateBlock("Column", pivot, new Vector3(0f, 0.55f, 0f), Vector3.zero, new Vector3(0.22f, 0.55f, 0.22f), gunMetal, PrimitiveType.Cylinder);
+                for (int i = 0; i < 4; i++)
+                {
+                    float y = 0.25f + i * 0.2f;
+                    float width = 0.62f - i * 0.08f;
+                    LowPolyKit.CreateBlock("Coil", pivot, new Vector3(0f, y, 0f), Vector3.zero, new Vector3(width, 0.05f, width), i % 2 == 0 ? copperMat : accentGlow, PrimitiveType.Cylinder);
+                }
+                for (int i = 0; i < 4; i++)
+                {
+                    Vector3 dir = Quaternion.Euler(0f, 45f + i * 90f, 0f) * Vector3.forward * 0.5f;
+                    LowPolyKit.CreateBlock("Insulator", pivot, dir + new Vector3(0f, 0.18f, 0f), Vector3.zero, new Vector3(0.12f, 0.18f, 0.12f), insulatorMat, PrimitiveType.Cylinder);
+                    LowPolyKit.CreateBlock("Spark", pivot, dir + new Vector3(0f, 0.4f, 0f), Vector3.zero, new Vector3(0.08f, 0.08f, 0.08f), accentGlow, PrimitiveType.Sphere);
+                }
+
+                GameObject orb = new GameObject("OrbPivot");
+                orb.transform.SetParent(pivot, false);
+                orb.transform.localPosition = new Vector3(0f, 1.25f, 0f);
                 orb.AddComponent<SlowSpinner>().Configure(Vector3.up, 180f);
-                break;
+                LowPolyKit.CreateBlock("Orb", orb.transform, Vector3.zero, Vector3.zero, Vector3.one * 0.42f, accentGlow, PrimitiveType.Sphere);
+                LowPolyKit.CreateBlock("OrbRing", orb.transform, Vector3.zero, new Vector3(70f, 0f, 0f), new Vector3(0.62f, 0.02f, 0.62f), copperMat, PrimitiveType.Cylinder);
+                return new Vector3(0f, 1.25f, 0.25f);
+            }
         }
+
+        return new Vector3(0f, 0.3f, 0.8f);
     }
 
     private static void AddBarrel(Transform parent, Vector3 localPos, Vector3 localEuler, float length, float radius, Material material, Color? tipColor)
@@ -1029,11 +1204,11 @@ public static class ProjectSetup
         AddHeroGear(rig, proportions, colors);
 
         // Chunkier than an enemy grunt's rifle so the hero's weapon reads at phone size.
-        rig.rifle.localScale = Vector3.one * 1.3f;
+        rig.rifle.localScale = Vector3.one * 1.75f;
 
         GameObject bow = new GameObject("Bow");
         bow.transform.SetParent(rig.weaponSocket, false);
-        bow.transform.localScale = Vector3.one * 1.2f;
+        bow.transform.localScale = Vector3.one * 1.5f;
         CharacterFactory.BuildBow(bow.transform,
             GetOrCreateMaterial("PlayerBowWood", new Color(0.5f, 0.32f, 0.16f), unlit: false),
             GetOrCreateMaterial("PlayerBowString", new Color(0.92f, 0.9f, 0.82f), unlit: true),
@@ -1056,6 +1231,8 @@ public static class ProjectSetup
         firePoint.transform.SetParent(go.transform, false);
         firePoint.transform.localPosition = go.transform.InverseTransformPoint(rig.muzzle.position);
 
+        LowPolyKit.GetOrAddComponent<FirstPersonView>(go).Configure(new[] { rig.armLHinge, rig.armRHinge });
+
         PlayerShooter shooter = LowPolyKit.GetOrAddComponent<PlayerShooter>(go);
         shooter.Configure(new[]
         {
@@ -1074,7 +1251,8 @@ public static class ProjectSetup
         return LowPolyKit.EndPrefabEdit(go, path, wasLoaded);
     }
 
-    // Helmet visor, face, backpack, belt and shoulder pads that turn the plain block biped into a hero silhouette.
+    // Helmet visor, face, armour vest, backpack, belt, shoulder and knee pads that turn the plain block
+    // biped into a fighter's silhouette. Shared by the hero and their hired soldiers.
     private static void AddHeroGear(CharacterFactory.BipedRig rig, CharacterFactory.BipedProportions p, CharacterFactory.BipedColors c)
     {
         Material gearMat = GetOrCreateMaterial("PlayerGear", new Color(0.26f, 0.3f, 0.2f), unlit: false);
@@ -1089,19 +1267,36 @@ public static class ProjectSetup
         float headCenterY = halfTorsoY + p.headSize.y * 0.5f - 0.02f;
         float headFrontZ = p.headSize.z * 0.5f;
 
-        LowPolyKit.CreateBlock("EyeL", torso, new Vector3(-0.08f, headCenterY + 0.01f, headFrontZ + 0.005f), Vector3.zero, new Vector3(0.06f, 0.07f, 0.02f), eyeMat);
-        LowPolyKit.CreateBlock("EyeR", torso, new Vector3(0.08f, headCenterY + 0.01f, headFrontZ + 0.005f), Vector3.zero, new Vector3(0.06f, 0.07f, 0.02f), eyeMat);
-        LowPolyKit.CreateBlock("Visor", torso, new Vector3(0f, headCenterY + p.headSize.y * 0.42f, headFrontZ + 0.03f), new Vector3(-12f, 0f, 0f), new Vector3(0.4f, 0.05f, 0.08f), visorMat);
+        Vector3 h = p.headSize;
+        Vector3 eyeSize = new Vector3(h.x * 0.16f, h.y * 0.19f, 0.02f);
+        LowPolyKit.CreateBlock("EyeL", torso, new Vector3(-h.x * 0.21f, headCenterY + h.y * 0.03f, headFrontZ + 0.005f), Vector3.zero, eyeSize, eyeMat);
+        LowPolyKit.CreateBlock("EyeR", torso, new Vector3(h.x * 0.21f, headCenterY + h.y * 0.03f, headFrontZ + 0.005f), Vector3.zero, eyeSize, eyeMat);
+        LowPolyKit.CreateBlock("Visor", torso, new Vector3(0f, headCenterY + h.y * 0.42f, headFrontZ + 0.03f), new Vector3(-12f, 0f, 0f), new Vector3(h.x * 1.05f, 0.06f, 0.1f), visorMat);
 
         LowPolyKit.CreateBlock("Backpack", torso, new Vector3(0f, 0.02f, -halfTorsoZ - 0.1f), Vector3.zero, new Vector3(0.44f, 0.48f, 0.2f), gearMat);
         LowPolyKit.CreateBlock("Bedroll", torso, new Vector3(0f, 0.3f, -halfTorsoZ - 0.12f), new Vector3(0f, 0f, 90f), new Vector3(0.14f, 0.26f, 0.14f), strapMat, PrimitiveType.Cylinder);
-        LowPolyKit.CreateBlock("Strap", torso, new Vector3(0f, 0.04f, halfTorsoZ + 0.005f), new Vector3(0f, 0f, 40f), new Vector3(0.08f, 0.82f, 0.02f), strapMat);
+        LowPolyKit.CreateBlock("Strap", torso, new Vector3(0f, 0.04f, halfTorsoZ + 0.055f), new Vector3(0f, 0f, 40f), new Vector3(0.08f, 0.82f, 0.02f), strapMat);
 
         LowPolyKit.CreateBlock("PadL", torso, new Vector3(-p.armSpacingX, p.armY + 0.06f, 0f), new Vector3(0f, 0f, 12f), new Vector3(0.28f, 0.12f, 0.3f), padMat);
         LowPolyKit.CreateBlock("PadR", torso, new Vector3(p.armSpacingX, p.armY + 0.06f, 0f), new Vector3(0f, 0f, -12f), new Vector3(0.28f, 0.12f, 0.3f), padMat);
 
         LowPolyKit.CreateBlock("Belt", rig.hips, new Vector3(0f, p.pelvisSize.y + 0.02f, 0f), Vector3.zero, new Vector3(p.pelvisSize.x + 0.06f, 0.09f, p.pelvisSize.z + 0.06f), strapMat);
         LowPolyKit.CreateBlock("Pouch", rig.hips, new Vector3(0.2f, p.pelvisSize.y - 0.04f, p.pelvisSize.z * 0.5f + 0.05f), Vector3.zero, new Vector3(0.12f, 0.12f, 0.08f), gearMat);
+
+        // Armour vest over the chest (with a few mag pouches) and a collar where the helmet meets the body.
+        Material vestMat = GetOrCreateMaterial("PlayerVest", new Color(0.2f, 0.24f, 0.18f), unlit: false);
+        LowPolyKit.CreateBlock("Vest", torso, new Vector3(0f, 0.02f, halfTorsoZ + 0.02f), Vector3.zero, new Vector3(p.torsoSize.x * 0.82f, p.torsoSize.y * 0.62f, 0.06f), vestMat);
+        for (int i = -1; i <= 1; i++)
+        {
+            LowPolyKit.CreateBlock("MagPouch", torso, new Vector3(i * 0.13f, -0.16f, halfTorsoZ + 0.07f), Vector3.zero, new Vector3(0.1f, 0.14f, 0.06f), gearMat);
+        }
+        LowPolyKit.CreateBlock("Collar", torso, new Vector3(0f, halfTorsoY - 0.02f, 0f), Vector3.zero, new Vector3(p.torsoSize.x * 0.62f, 0.08f, p.torsoSize.z * 1.08f), vestMat);
+
+        Vector3 kneePad = new Vector3(p.legSize.x * 1.15f, 0.13f, 0.07f);
+        float kneeY = -p.legSize.y * 0.48f;
+        float kneeZ = p.legSize.z * 0.5f + 0.02f;
+        LowPolyKit.CreateBlock("KneePadL", rig.legLHinge, new Vector3(0f, kneeY, kneeZ), Vector3.zero, kneePad, padMat);
+        LowPolyKit.CreateBlock("KneePadR", rig.legRHinge, new Vector3(0f, kneeY, kneeZ), Vector3.zero, kneePad, padMat);
     }
 
     // Built in place every run (unlike the sphere projectiles) so tweaks to its shape reach the existing prefab.
@@ -1168,12 +1363,21 @@ public static class ProjectSetup
         LowPolyKit.CreateBlock("EyeR", head, new Vector3(0.09f, 0.06f, 0.181f), Vector3.zero, new Vector3(0.05f, 0.06f, 0.02f), noseMat);
         LowPolyKit.CreateBlock("EarL", head, new Vector3(-0.15f, 0.12f, -0.04f), new Vector3(0f, 0f, 20f), new Vector3(0.08f, 0.2f, 0.14f), darkFurMat);
         LowPolyKit.CreateBlock("EarR", head, new Vector3(0.15f, 0.12f, -0.04f), new Vector3(0f, 0f, -20f), new Vector3(0.08f, 0.2f, 0.14f), darkFurMat);
+        // Happy panting tongue and a darker brow so the face reads at phone size.
+        Material tongueMat = GetOrCreateMaterial("DogTongue", new Color(0.95f, 0.45f, 0.5f), unlit: false);
+        LowPolyKit.CreateBlock("Tongue", head, new Vector3(0.03f, -0.15f, 0.27f), new Vector3(20f, 0f, 0f), new Vector3(0.08f, 0.1f, 0.03f), tongueMat);
+        LowPolyKit.CreateBlock("Brow", head, new Vector3(0f, 0.11f, 0.17f), Vector3.zero, new Vector3(0.3f, 0.05f, 0.04f), darkFurMat);
+
+        // Saddle patch along the back and a pale chest, like a shepherd mix.
+        LowPolyKit.CreateBlock("Saddle", body, new Vector3(0f, 0.17f, -0.06f), Vector3.zero, new Vector3(0.44f, 0.06f, 0.56f), darkFurMat);
+        LowPolyKit.CreateBlock("Chest", body, new Vector3(0f, -0.02f, 0.4f), Vector3.zero, new Vector3(0.34f, 0.28f, 0.04f), lightFurMat);
 
         GameObject tailGo = new GameObject("Tail");
         tailGo.transform.SetParent(body, false);
         tailGo.transform.localPosition = new Vector3(0f, 0.12f, -0.38f);
         tailGo.transform.localRotation = Quaternion.Euler(-35f, 0f, 0f);
         LowPolyKit.CreateBlock("TailMesh", tailGo.transform, new Vector3(0f, 0.17f, 0f), Vector3.zero, new Vector3(0.08f, 0.34f, 0.08f), darkFurMat);
+        LowPolyKit.CreateBlock("TailTip", tailGo.transform, new Vector3(0f, 0.36f, 0f), Vector3.zero, new Vector3(0.09f, 0.08f, 0.09f), lightFurMat);
 
         Vector3 legSize = new Vector3(0.12f, 0.42f, 0.12f);
         string[] legNames = { "LegFL", "LegFR", "LegBL", "LegBR" };
@@ -1221,6 +1425,7 @@ public static class ProjectSetup
 
         CharacterFactory.BipedProportions proportions = CharacterFactory.PlayerProportions;
         CharacterFactory.BipedRig rig = CharacterFactory.BuildBiped(go, proportions, colors, "Soldier");
+        AddHeroGear(rig, proportions, colors);
         rig.rifle.localScale = Vector3.one * 1.15f;
         AddTeamRing(go.transform, 0.55f, PlayerRingColor);
         CharacterFactory.BuildAnimations(go, rig, proportions, "Soldier",
@@ -1338,6 +1543,21 @@ public static class ProjectSetup
         SetPrivateField(gate.GetComponent<Gate>(), "hero", hero);
     }
 
+    // Wooden torch with a glowing, flickering flame. No real light - bloom sells the glow and keeps
+    // per-pixel lights off the phone's budget.
+    private static void AddTorch(Transform parent, Vector3 localPos)
+    {
+        Material stickMat = GetOrCreateMaterial("TorchStick", new Color(0.35f, 0.22f, 0.12f), unlit: false);
+        Material flameMat = GetOrCreateMaterial("TorchFlame", new Color(3f, 1.4f, 0.3f), unlit: true);
+        Material emberMat = GetOrCreateMaterial("TorchEmber", new Color(3f, 0.6f, 0.1f), unlit: true);
+
+        LowPolyKit.CreateBlock("TorchStick", parent, localPos, Vector3.zero, new Vector3(0.08f, 0.4f, 0.08f), stickMat);
+        LowPolyKit.CreateBlock("TorchEmber", parent, localPos + new Vector3(0f, 0.24f, 0f), new Vector3(0f, 45f, 0f), new Vector3(0.14f, 0.1f, 0.14f), emberMat);
+        Transform flame = LowPolyKit.CreateBlock("TorchFlame", parent, localPos + new Vector3(0f, 0.38f, 0f), new Vector3(0f, 45f, 0f), new Vector3(0.12f, 0.24f, 0.12f), flameMat);
+        flame.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        flame.gameObject.AddComponent<TorchFlicker>();
+    }
+
     private static Gate GetOrCreateGatePrefab()
     {
         string path = $"{PrefabFolder}/Gate.prefab";
@@ -1372,6 +1592,10 @@ public static class ProjectSetup
         Transform leftDoor = BuildDoor("DoorL", -2.45f, 1f);
         Transform rightDoor = BuildDoor("DoorR", 2.45f, -1f);
 
+        // A torch on the outer face of each pillar marks the way in.
+        AddTorch(go.transform, new Vector3(-2.75f, 1.9f, -0.85f));
+        AddTorch(go.transform, new Vector3(2.75f, 1.9f, -0.85f));
+
         LowPolyKit.GetOrAddComponent<Health>(go).Configure(500f);
         LowPolyKit.GetOrAddComponent<HitFlash>(go);
         Wall wall = LowPolyKit.GetOrAddComponent<Wall>(go);
@@ -1398,6 +1622,18 @@ public static class ProjectSetup
         LowPolyKit.CreateBlock("Footing", go.transform, new Vector3(0f, 0.15f, 0f), Vector3.zero, new Vector3(2.95f, 0.3f, 2.95f), darkStoneMat);
         LowPolyKit.CreateBlock("Shaft", go.transform, new Vector3(0f, 1.8f, 0f), Vector3.zero, new Vector3(2.3f, 3.1f, 2.3f), stoneMat);
         LowPolyKit.CreateBlock("Platform", go.transform, new Vector3(0f, platformY, 0f), Vector3.zero, new Vector3(3.1f, 0.25f, 3.1f), woodMat);
+
+        // Timber braces under the platform overhang and a dark arrow slit on each face.
+        Material slitMat = GetOrCreateMaterial("WatchtowerSlit", new Color(0.06f, 0.05f, 0.05f), unlit: true);
+        for (int i = 0; i < 4; i++)
+        {
+            Quaternion face = Quaternion.Euler(0f, i * 90f, 0f);
+            LowPolyKit.CreateBlock("Brace", go.transform, face * new Vector3(0.7f, platformY - 0.35f, 1.25f), new Vector3(0f, i * 90f, 45f), new Vector3(0.12f, 0.6f, 0.12f), woodMat);
+            LowPolyKit.CreateBlock("Brace", go.transform, face * new Vector3(-0.7f, platformY - 0.35f, 1.25f), new Vector3(0f, i * 90f, -45f), new Vector3(0.12f, 0.6f, 0.12f), woodMat);
+            LowPolyKit.CreateBlock("Slit", go.transform, face * new Vector3(0f, 2.1f, 1.16f), new Vector3(0f, i * 90f, 0f), new Vector3(0.14f, 0.55f, 0.02f), slitMat);
+        }
+        LowPolyKit.CreateBlock("MortarBand", go.transform, new Vector3(0f, 1.2f, 0f), Vector3.zero, new Vector3(2.32f, 0.05f, 2.32f), GetOrCreateMaterial("WallMortar", new Color(0.3f, 0.28f, 0.26f), unlit: false));
+        AddTorch(go.transform, new Vector3(-1.35f, platformY + 0.85f, 1.35f));
 
         // Low rails and corner merlons keep the guard visible from the overhead camera.
         for (int i = 0; i < 4; i++)
@@ -1753,6 +1989,7 @@ public static class ProjectSetup
         spawner.SetUpgradeDraft(BuildUpgradeDraft(canvas));
         BuildSquadHud(safeArea, squad, shooter != null ? shooter.transform : null);
         BuildHeroShop(canvas, safeArea, shooter, dogPrefab, placer, squad);
+        BuildViewModeHud(safeArea, placer);
         EditorUtility.SetDirty(spawner);
     }
 
@@ -1898,6 +2135,42 @@ public static class ProjectSetup
         // Lives on the always-visible button: a script on the hidden panel would never wake up to wire the button.
         HeroShopUI shop = openButton.gameObject.AddComponent<HeroShopUI>();
         shop.Configure(openButton, overlay.gameObject, closeButton, scrapText, views, shooter, dogPrefab, placer, squad);
+    }
+
+    private static void BuildViewModeHud(RectTransform safeArea, TowerPlacer placer)
+    {
+        Vector2 topRight = new Vector2(1f, 1f);
+        Vector2 bottomRight = new Vector2(1f, 0f);
+        Vector2 center = new Vector2(0.5f, 0.5f);
+
+        Button toggle = CreateMenuButton(safeArea, "ViewToggleButton", "FPS", topRight, new Vector2(-24f, -120f), new Vector2(200f, 80f), new Color(0.7f, 0.5f, 1f), 40);
+
+        RectTransform fire = CreateRect("FireButton", safeArea, bottomRight, bottomRight, new Vector2(0.5f, 0.5f), new Vector2(-170f, 230f), new Vector2(250f, 250f));
+        AddImage(fire, new Color(0.95f, 0.3f, 0.25f, 0.85f), CircleSprite, raycast: true);
+        Text fireLabel = CreateFillText(fire, "Label", 52, Color.white, TextAnchor.MiddleCenter);
+        fireLabel.text = "FIRE";
+        fireLabel.fontStyle = FontStyle.Bold;
+        AddTextShadow(fireLabel);
+        fire.gameObject.AddComponent<FireButton>();
+
+        // Four ticks around a dot, centred on screen where the camera looks.
+        RectTransform crosshair = CreateRect("Crosshair", safeArea.parent, center, center, center, Vector2.zero, new Vector2(80f, 80f));
+        // Just above the touch surface, so shop/upgrade overlays draw over it.
+        crosshair.SetSiblingIndex(safeArea.GetSiblingIndex());
+        Color tickColor = new Color(1f, 1f, 1f, 0.9f);
+        AddImage(CreateRect("Dot", crosshair, center, center, center, Vector2.zero, new Vector2(8f, 8f)), tickColor);
+        AddImage(CreateRect("Top", crosshair, center, center, center, new Vector2(0f, 24f), new Vector2(5f, 18f)), tickColor);
+        AddImage(CreateRect("Bottom", crosshair, center, center, center, new Vector2(0f, -24f), new Vector2(5f, 18f)), tickColor);
+        AddImage(CreateRect("Left", crosshair, center, center, center, new Vector2(-24f, 0f), new Vector2(18f, 5f)), tickColor);
+        AddImage(CreateRect("Right", crosshair, center, center, center, new Vector2(24f, 0f), new Vector2(18f, 5f)), tickColor);
+
+        Transform towerShop = safeArea.Find("TowerShopPanel");
+        ViewModeHUD hud = toggle.gameObject.AddComponent<ViewModeHUD>();
+        hud.Configure(toggle, toggle.GetComponentInChildren<Text>(), placer,
+            new[] { towerShop != null ? towerShop.gameObject : null },
+            new[] { fire.gameObject, crosshair.gameObject });
+        fire.gameObject.SetActive(false);
+        crosshair.gameObject.SetActive(false);
     }
 
     private static void BuildSquadHud(RectTransform safeArea, SquadCommander squad, Transform hero)

@@ -69,6 +69,9 @@ public class PlayerController : MonoBehaviour
         if (sinceDamaged >= regenDelay && health != null) health.Heal(regenPerSecond * Time.deltaTime);
 
         Vector3 moveInput = ReadMoveInput();
+        // In first-person the stick is relative to where the hero looks, not to the screen.
+        bool firstPerson = FirstPersonView.IsActive;
+        if (firstPerson) moveInput = Quaternion.Euler(0f, transform.eulerAngles.y, 0f) * moveInput;
         bool sprinting = IsSprintHeld() && moveInput.sqrMagnitude > 0.0001f;
         float speedMultiplier = sprinting ? sprintMultiplier : 1f;
 
@@ -83,7 +86,7 @@ public class PlayerController : MonoBehaviour
 
         // While shooting, PlayerShooter owns facing; turning here as well made the two fight each frame.
         bool aiming = shooter != null && shooter.HasTarget;
-        if (!aiming && moveInput.sqrMagnitude > 0.0001f)
+        if (!aiming && !firstPerson && moveInput.sqrMagnitude > 0.0001f)
         {
             Quaternion targetRotation = Quaternion.LookRotation(moveInput);
             transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);

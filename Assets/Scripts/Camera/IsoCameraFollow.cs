@@ -11,6 +11,11 @@ public class IsoCameraFollow : MonoBehaviour
     [SerializeField] private float followSharpness = 8f;
     [SerializeField] private Vector3 targetOffset = new Vector3(0f, 0f, 2f);
 
+    [Header("First Person")]
+    [SerializeField] private float firstPersonFov = 72f;
+    [SerializeField] private float firstPersonNearClip = 0.05f;
+    [SerializeField] private float firstPersonShakeScale = 0.25f;
+
     [Header("Shake")]
     [SerializeField] private float maxShakeOffset = 0.7f;
     [SerializeField] private float maxShakeAngle = 2.5f;
@@ -22,6 +27,7 @@ public class IsoCameraFollow : MonoBehaviour
     private Camera cam;
     private bool snapped;
     private Vector3 smoothedPosition;
+    private float defaultNearClip = 0.3f;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetStatics() => trauma = 0f;
@@ -40,15 +46,46 @@ public class IsoCameraFollow : MonoBehaviour
     private void Awake()
     {
         cam = GetComponent<Camera>();
-        if (cam != null) cam.orthographic = false;
+        if (cam != null)
+        {
+            cam.orthographic = false;
+            defaultNearClip = cam.nearClipPlane;
+        }
+    }
+
+    // Locked to the hero's eye. Shake is toned down - full top-down shake is nauseating up close.
+    private void FollowEye(FirstPersonView view)
+    {
+        if (cam != null)
+        {
+            cam.fieldOfView = firstPersonFov;
+            cam.nearClipPlane = firstPersonNearClip;
+        }
+
+        float shake = trauma * trauma * firstPersonShakeScale;
+        float seed = Time.unscaledTime * 25f;
+        Vector3 shakeEuler = new Vector3(Mathf.PerlinNoise(seed, 0f) - 0.5f, Mathf.PerlinNoise(0f, seed) - 0.5f, Mathf.PerlinNoise(seed, seed) - 0.5f) * 2f * maxShakeAngle * shake;
+        trauma = Mathf.Max(0f, trauma - traumaDecay * Time.unscaledDeltaTime);
+
+        transform.SetPositionAndRotation(view.EyePosition, view.EyeRotation * Quaternion.Euler(shakeEuler));
+        // Snap back cleanly when returning to the top view.
+        snapped = false;
     }
 
     private void LateUpdate()
     {
         if (target == null) return;
 
+        if (FirstPersonView.IsActive)
+        {
+            FollowEye(FirstPersonView.Instance);
+            return;
+        }
+
         if (cam != null)
         {
+            cam.nearClipPlane = defaultNearClip;
+
             float halfWidth = visibleWidth * 0.5f;
             float verticalFov = 2f * Mathf.Atan(halfWidth / (distance * Mathf.Max(cam.aspect, 0.01f))) * Mathf.Rad2Deg;
             cam.fieldOfView = Mathf.Clamp(verticalFov, 20f, 80f);

@@ -37,13 +37,18 @@ public class Projectile : MonoBehaviour
     // Fires 1 + upgrade-granted extra projectiles in a fan centred on the fire point's aim.
     public static void FireVolley(Projectile prefab, Transform firePoint, float damage, Enemy target, TowerKind source)
     {
-        Quaternion aim = AimWithPitch(firePoint, target);
+        FireVolley(prefab, firePoint.position, AimWithPitch(firePoint, target), damage, target, source);
+    }
+
+    // Same fan, from an explicit position and aim (first-person shots aim along the crosshair).
+    public static void FireVolley(Projectile prefab, Vector3 origin, Quaternion aim, float damage, Enemy target, TowerKind source)
+    {
         int count = 1 + RunModifiers.ExtraProjectiles(source);
         for (int i = 0; i < count; i++)
         {
             float angle = (i - (count - 1) * 0.5f) * VolleySpreadDegrees;
             Quaternion rotation = aim * Quaternion.Euler(0f, angle, 0f);
-            Projectile projectile = Instantiate(prefab, firePoint.position, rotation);
+            Projectile projectile = Instantiate(prefab, origin, rotation);
             projectile.Launch(rotation * Vector3.forward, damage, target, source);
         }
     }

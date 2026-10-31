@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public class PlayerShooter : MonoBehaviour
 {
@@ -7,6 +8,10 @@ public class PlayerShooter : MonoBehaviour
     [SerializeField] private float rotationSpeed = 1080f;
     [SerializeField] private float fireConeDegrees = 15f;
     [SerializeField] private Animator animator;
+
+    [Header("First Person")]
+    [SerializeField] private float aimAssistDegrees = 5f;
+    [SerializeField] private float recoilKickDegrees = 1.2f;
 
     private static readonly int ShootParam = Animator.StringToHash("Shoot");
 
@@ -68,6 +73,18 @@ public class PlayerShooter : MonoBehaviour
             return;
         }
 
+        if (FirstPersonView.IsActive)
+        {
+            // Manual aim: no auto-targeting, fire only while FIRE (or Space) is held.
+            currentTarget = null;
+            if (cooldownTimer <= 0f && IsFireHeld() && weapon.projectilePrefab != null && firePoint != null)
+            {
+                FireFirstPerson(weapon);
+                cooldownTimer = 1f / (weapon.fireRate * RunModifiers.FireRate(TowerKind.Hero));
+            }
+            return;
+        }
+
         AcquireTarget(weapon.range);
         if (currentTarget == null) return;
 
@@ -113,6 +130,59 @@ public class PlayerShooter : MonoBehaviour
         Projectile.FireVolley(weapon.projectilePrefab, firePoint, weapon.damage * RunModifiers.Damage(TowerKind.Hero), currentTarget, TowerKind.Hero);
         Sfx.Play(weapon.fireSound, weapon.firePitch, weapon.fireVolume);
         if (animator != null) animator.SetTrigger(ShootParam);
+    }
+
+    private static bool IsFireHeld()
+    {
+        if (FireButton.IsHeld) return true;
+        Keyboard kb = Keyboard.current;
+        return kb != null && kb.spaceKey.isPressed;
+    }
+
+    // Shoots from the muzzle toward whatever is under the crosshair. A zombie within a few degrees
+    // of the crosshair gets the shot instead (aim assist), since thumbs aren't precise.
+    private void FireFirstPerson(HeroWeapon weapon)
+    {
+        Camera cam = Camera.main;
+        if (cam == null) return;
+
+        Vector3 eye = cam.transform.position;
+        Vector3 look = cam.transform.forward;
+        float maxDistance = weapon.range * 2.5f;
+
+        Enemy assisted = FindAimAssistTarget(eye, look, maxDistance);
+        Vector3 aimPoint;
+        if (assisted != null) aimPoint = assisted.AimPoint;
+        else if (Physics.Raycast(eye, look, out RaycastHit hit, maxDistance, ~0, QueryTriggerInteraction.Ignore)) aimPoint = hit.point;
+        else aimPoint = eye + look * maxDistance;
+
+        Vector3 direction = aimPoint - firePoint.position;
+        if (direction.sqrMagnitude < 0.0001f) direction = look;
+
+        Projectile.FireVolley(weapon.projectilePrefab, firePoint.position, Quaternion.LookRotation(direction),
+            weapon.damage * RunModifiers.Damage(TowerKind.Hero), assisted, TowerKind.Hero);
+        Sfx.Play(weapon.fireSound, weapon.firePitch, weapon.fireVolume);
+        if (animator != null) animator.SetTrigger(ShootParam);
+        FirstPersonView.Instance.Kick(recoilKickDegrees);
+    }
+
+    private Enemy FindAimAssistTarget(Vector3 eye, Vector3 look, float maxDistance)
+    {
+        Enemy best = null;
+        float bestAngle = aimAssistDegrees;
+        foreach (Enemy enemy in Enemy.Active)
+        {
+            Vector3 toEnemy = enemy.AimPoint - eye;
+            if (toEnemy.sqrMagnitude > maxDistance * maxDistance) continue;
+
+            float angle = Vector3.Angle(look, toEnemy);
+            if (angle < bestAngle)
+            {
+                bestAngle = angle;
+                best = enemy;
+            }
+        }
+        return best;
     }
 
     private void OnDrawGizmosSelected()

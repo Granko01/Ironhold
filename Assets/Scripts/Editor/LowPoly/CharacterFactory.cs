@@ -41,41 +41,48 @@ public static class CharacterFactory
         // Like torsoRestLeanX, the arm swing curves oscillate around these instead of hanging straight.
         public Vector3 armRestEulerL;
         public Vector3 armRestEulerR;
+
+        // Multiplier on hand size; 0 means the default (hands about as wide as the arm).
+        public float handScale;
     }
 
+    // Heads are deliberately oversized (about 1.45x a realistic ratio) - the chunky-head style
+    // keeps faces and silhouettes readable from the overhead camera on a phone.
     public static readonly BipedProportions PlayerProportions = new BipedProportions
     {
         hipsY = 0.95f,
         pelvisSize = new Vector3(0.5f, 0.22f, 0.32f),
-        torsoSize = new Vector3(0.6f, 0.72f, 0.34f),
-        headSize = new Vector3(0.38f, 0.36f, 0.38f),
-        headwearSize = new Vector3(0.44f, 0.26f, 0.44f),
+        torsoSize = new Vector3(0.54f, 0.684f, 0.313f),
+        headSize = new Vector3(0.551f, 0.522f, 0.551f),
+        headwearSize = new Vector3(0.638f, 0.338f, 0.638f),
         headwearIsDome = true,
         legSize = new Vector3(0.22f, 0.85f, 0.22f),
         legSpacingX = 0.18f,
         footSize = new Vector3(0.26f, 0.14f, 0.42f),
         armSize = new Vector3(0.2f, 0.5f, 0.2f),
-        armSpacingX = 0.4f,
+        armSpacingX = 0.368f,
         armY = 0.26f,
         torsoRestLeanX = 0f,
         // Right arm reaches forward-inward for the grip, left arm crosses over to steady the barrel.
         armRestEulerL = new Vector3(-62f, 42f, 0f),
         armRestEulerR = new Vector3(-58f, -30f, 0f),
+        // Chunky hands read at phone size and make the weapon grip obvious.
+        handScale = 1.6f,
     };
 
     public static readonly BipedProportions GruntProportions = new BipedProportions
     {
         hipsY = 0.85f,
         pelvisSize = new Vector3(0.54f, 0.22f, 0.36f),
-        torsoSize = new Vector3(0.66f, 0.68f, 0.38f),
-        headSize = new Vector3(0.38f, 0.34f, 0.38f),
-        headwearSize = new Vector3(0.46f, 0.14f, 0.46f),
+        torsoSize = new Vector3(0.594f, 0.646f, 0.35f),
+        headSize = new Vector3(0.551f, 0.493f, 0.551f),
+        headwearSize = new Vector3(0.667f, 0.182f, 0.667f),
         headwearIsDome = false,
         legSize = new Vector3(0.24f, 0.7f, 0.24f),
         legSpacingX = 0.2f,
         footSize = new Vector3(0.28f, 0.14f, 0.44f),
         armSize = new Vector3(0.22f, 0.46f, 0.22f),
-        armSpacingX = 0.44f,
+        armSpacingX = 0.405f,
         armY = 0.24f,
         torsoRestLeanX = 0f,
     };
@@ -84,15 +91,15 @@ public static class CharacterFactory
     {
         hipsY = 0.72f,
         pelvisSize = new Vector3(0.34f, 0.16f, 0.24f),
-        torsoSize = new Vector3(0.42f, 0.54f, 0.24f),
-        headSize = new Vector3(0.3f, 0.28f, 0.3f),
-        headwearSize = new Vector3(0.32f, 0.1f, 0.18f),
+        torsoSize = new Vector3(0.378f, 0.513f, 0.221f),
+        headSize = new Vector3(0.435f, 0.406f, 0.435f),
+        headwearSize = new Vector3(0.464f, 0.13f, 0.261f),
         headwearIsDome = false,
         legSize = new Vector3(0.17f, 0.65f, 0.17f),
         legSpacingX = 0.15f,
         footSize = new Vector3(0.2f, 0.12f, 0.34f),
         armSize = new Vector3(0.15f, 0.4f, 0.15f),
-        armSpacingX = 0.3f,
+        armSpacingX = 0.276f,
         armY = 0.2f,
         torsoRestLeanX = 22f,
     };
@@ -101,15 +108,15 @@ public static class CharacterFactory
     {
         hipsY = 1.15f,
         pelvisSize = new Vector3(0.78f, 0.3f, 0.5f),
-        torsoSize = new Vector3(1.0f, 1.0f, 0.56f),
-        headSize = new Vector3(0.4f, 0.36f, 0.4f),
-        headwearSize = new Vector3(0.42f, 0.16f, 0.42f),
+        torsoSize = new Vector3(0.9f, 0.95f, 0.515f),
+        headSize = new Vector3(0.58f, 0.522f, 0.58f),
+        headwearSize = new Vector3(0.609f, 0.208f, 0.609f),
         headwearIsDome = false,
         legSize = new Vector3(0.34f, 1.02f, 0.34f),
         legSpacingX = 0.26f,
         footSize = new Vector3(0.36f, 0.16f, 0.5f),
         armSize = new Vector3(0.34f, 0.72f, 0.34f),
-        armSpacingX = 0.58f,
+        armSpacingX = 0.534f,
         armY = 0.34f,
         torsoRestLeanX = 0f,
     };
@@ -118,15 +125,15 @@ public static class CharacterFactory
     {
         hipsY = 0.82f,
         pelvisSize = new Vector3(0.44f, 0.2f, 0.32f),
-        torsoSize = new Vector3(0.62f, 0.6f, 0.42f),
-        headSize = new Vector3(0.3f, 0.28f, 0.3f),
-        headwearSize = new Vector3(0.32f, 0.08f, 0.28f),
+        torsoSize = new Vector3(0.558f, 0.57f, 0.386f),
+        headSize = new Vector3(0.435f, 0.406f, 0.435f),
+        headwearSize = new Vector3(0.464f, 0.104f, 0.406f),
         headwearIsDome = false,
         legSize = new Vector3(0.17f, 0.74f, 0.17f),
         legSpacingX = 0.16f,
         footSize = new Vector3(0.2f, 0.12f, 0.34f),
         armSize = new Vector3(0.16f, 0.42f, 0.16f),
-        armSpacingX = 0.32f,
+        armSpacingX = 0.294f,
         armY = 0.2f,
         torsoRestLeanX = 10f,
     };
@@ -135,15 +142,15 @@ public static class CharacterFactory
     {
         hipsY = 0.84f,
         pelvisSize = new Vector3(0.5f, 0.2f, 0.34f),
-        torsoSize = new Vector3(0.6f, 0.64f, 0.36f),
-        headSize = new Vector3(0.34f, 0.32f, 0.34f),
-        headwearSize = new Vector3(0.4f, 0.12f, 0.4f),
+        torsoSize = new Vector3(0.54f, 0.608f, 0.331f),
+        headSize = new Vector3(0.493f, 0.464f, 0.493f),
+        headwearSize = new Vector3(0.58f, 0.156f, 0.58f),
         headwearIsDome = false,
         legSize = new Vector3(0.22f, 0.76f, 0.22f),
         legSpacingX = 0.18f,
         footSize = new Vector3(0.26f, 0.14f, 0.4f),
         armSize = new Vector3(0.2f, 0.44f, 0.2f),
-        armSpacingX = 0.4f,
+        armSpacingX = 0.368f,
         armY = 0.24f,
         torsoRestLeanX = 0f,
     };
@@ -152,15 +159,15 @@ public static class CharacterFactory
     {
         hipsY = 0.85f,
         pelvisSize = new Vector3(0.5f, 0.2f, 0.32f),
-        torsoSize = new Vector3(0.58f, 0.64f, 0.34f),
-        headSize = new Vector3(0.34f, 0.32f, 0.34f),
-        headwearSize = new Vector3(0.4f, 0.2f, 0.4f),
+        torsoSize = new Vector3(0.522f, 0.608f, 0.313f),
+        headSize = new Vector3(0.493f, 0.464f, 0.493f),
+        headwearSize = new Vector3(0.58f, 0.26f, 0.58f),
         headwearIsDome = true,
         legSize = new Vector3(0.2f, 0.77f, 0.2f),
         legSpacingX = 0.18f,
         footSize = new Vector3(0.24f, 0.14f, 0.38f),
         armSize = new Vector3(0.18f, 0.44f, 0.18f),
-        armSpacingX = 0.36f,
+        armSpacingX = 0.331f,
         armY = 0.22f,
         torsoRestLeanX = 0f,
     };
@@ -170,18 +177,28 @@ public static class CharacterFactory
     {
         hipsY = 2.6f,
         pelvisSize = new Vector3(1.6f, 0.6f, 1.0f),
-        torsoSize = new Vector3(2.0f, 2.0f, 1.1f),
-        headSize = new Vector3(0.55f, 0.5f, 0.55f),
-        headwearSize = new Vector3(0.62f, 0.22f, 0.62f),
+        torsoSize = new Vector3(1.8f, 1.9f, 1.012f),
+        headSize = new Vector3(0.797f, 0.725f, 0.797f),
+        headwearSize = new Vector3(0.899f, 0.286f, 0.899f),
         headwearIsDome = false,
         legSize = new Vector3(0.6f, 2.45f, 0.6f),
         legSpacingX = 0.55f,
         footSize = new Vector3(0.75f, 0.32f, 1.05f),
         armSize = new Vector3(0.65f, 1.5f, 0.65f),
-        armSpacingX = 1.2f,
+        armSpacingX = 1.104f,
         armY = 0.7f,
         torsoRestLeanX = 0f,
     };
+
+    // A copy of `p` posed like the undead: arms reaching forward (each its own angle, for an
+    // uneven, lurching look) and the torso hunched further over.
+    public static BipedProportions Zombified(BipedProportions p, Vector3 armL, Vector3 armR, float extraLean)
+    {
+        p.armRestEulerL = armL;
+        p.armRestEulerR = armR;
+        p.torsoRestLeanX += extraLean;
+        return p;
+    }
 
     public struct BipedRig
     {
@@ -238,7 +255,7 @@ public static class CharacterFactory
 
         if (hasWeapon)
         {
-            float handSize = p.armSize.x * 1.05f;
+            float handSize = p.armSize.x * 1.05f * (p.handScale > 0f ? p.handScale : 1f);
             LowPolyKit.CreateBlock("HandR", rig.armRHinge, new Vector3(0f, -p.armSize.y - handSize * 0.35f, 0f), Vector3.zero, Vector3.one * handSize, skinMat);
             LowPolyKit.CreateBlock("HandL", rig.armLHinge, new Vector3(0f, -p.armSize.y - handSize * 0.35f, 0f), Vector3.zero, Vector3.one * handSize, skinMat);
 

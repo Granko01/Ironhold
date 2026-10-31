@@ -53,7 +53,8 @@ public class SquadHUD : MonoBehaviour
     {
         UpdateHireButton();
 
-        bool hasSquad = squad != null && squad.Count > 0;
+        // Squad orders need a tap on the map, which first-person view can't give.
+        bool hasSquad = squad != null && squad.Count > 0 && !FirstPersonView.IsActive;
         squadButton.gameObject.SetActive(hasSquad);
         if (squadHint != null) squadHint.SetActive(SquadCommander.IsChoosing);
         if (!hasSquad) return;
