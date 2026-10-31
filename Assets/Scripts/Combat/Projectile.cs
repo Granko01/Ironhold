@@ -37,14 +37,33 @@ public class Projectile : MonoBehaviour
     // Fires 1 + upgrade-granted extra projectiles in a fan centred on the fire point's aim.
     public static void FireVolley(Projectile prefab, Transform firePoint, float damage, Enemy target, TowerKind source)
     {
+        Quaternion aim = AimWithPitch(firePoint, target);
         int count = 1 + RunModifiers.ExtraProjectiles(source);
         for (int i = 0; i < count; i++)
         {
             float angle = (i - (count - 1) * 0.5f) * VolleySpreadDegrees;
-            Quaternion rotation = firePoint.rotation * Quaternion.Euler(0f, angle, 0f);
+            Quaternion rotation = aim * Quaternion.Euler(0f, angle, 0f);
             Projectile projectile = Instantiate(prefab, firePoint.position, rotation);
             projectile.Launch(rotation * Vector3.forward, damage, target, source);
         }
+    }
+
+    // Keeps the shooter's facing (yaw) but tilts the shot up/down at the target's body centre.
+    // Shots used to fly dead level from the muzzle, passing over short enemies (a muzzle held at
+    // chest height clears a Runner's head) and under nothing at all from a watchtower.
+    private static Quaternion AimWithPitch(Transform firePoint, Enemy target)
+    {
+        Vector3 forward = firePoint.forward;
+        forward.y = 0f;
+        if (target == null || forward.sqrMagnitude < 0.0001f) return firePoint.rotation;
+
+        Vector3 toTarget = target.AimPoint - firePoint.position;
+        float horizontal = new Vector2(toTarget.x, toTarget.z).magnitude;
+        if (horizontal < 0.1f) return firePoint.rotation;
+
+        float pitch = Mathf.Atan2(toTarget.y, horizontal);
+        Vector3 direction = forward.normalized * Mathf.Cos(pitch) + Vector3.up * Mathf.Sin(pitch);
+        return Quaternion.LookRotation(direction);
     }
 
     public void Launch(Vector3 launchDirection, float launchDamage, Enemy launchTarget = null, TowerKind launchSource = TowerKind.Hero)

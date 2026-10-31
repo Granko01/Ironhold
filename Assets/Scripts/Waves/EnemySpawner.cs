@@ -8,8 +8,15 @@ public class EnemySpawner : MonoBehaviour
     [SerializeField] private Enemy enemyPrefab; // Fallback when no enemyTypes are configured.
     [SerializeField] private Enemy bossPrefab;
     [SerializeField] private Transform coreTarget;
-    [SerializeField] private Transform[] spawnPoints;
     [SerializeField] private UpgradeDraft upgradeDraft;
+
+    // Enemies dig up out of the treeline around the arena. Each wave comes from a couple of
+    // random directions, so the player has to read where the horde is and shore up that side.
+    [Header("Spawning")]
+    [SerializeField] private float spawnRadiusMin = 27f;
+    [SerializeField] private float spawnRadiusMax = 32f;
+    [SerializeField] private int approachesPerWave = 2;
+    [SerializeField] private float approachSpreadDegrees = 22f;
 
     [Header("Wave Scaling")]
     [SerializeField] private int baseThreatBudget = 8;
@@ -33,12 +40,13 @@ public class EnemySpawner : MonoBehaviour
         upgradeDraft = draft;
     }
 
-    public void Configure(EnemySpawnEntry[] types, Enemy boss, Transform core, Transform[] points)
+    private readonly List<float> approachAngles = new List<float>();
+
+    public void Configure(EnemySpawnEntry[] types, Enemy boss, Transform core)
     {
         enemyTypes = types;
         bossPrefab = boss;
         coreTarget = core;
-        spawnPoints = points;
     }
 
     private void Start()
@@ -53,6 +61,7 @@ public class EnemySpawner : MonoBehaviour
             CurrentWave++;
             IsBossWave = bossPrefab != null && bossEveryNWaves > 0 && CurrentWave % bossEveryNWaves == 0;
 
+            PickApproaches();
             List<Enemy> wave = BuildWave(CurrentWave);
             if (IsBossWave) wave.Insert(wave.Count / 2, bossPrefab);
             EnemiesRemaining = wave.Count;
@@ -131,18 +140,43 @@ public class EnemySpawner : MonoBehaviour
         return wave;
     }
 
+    // Approaches are kept at least 60 degrees apart so two of them never merge into one.
+    private void PickApproaches()
+    {
+        approachAngles.Clear();
+        int count = Mathf.Max(1, approachesPerWave + (CurrentWave >= 8 ? 1 : 0));
+        for (int attempt = 0; approachAngles.Count < count && attempt < 50; attempt++)
+        {
+            float angle = Random.Range(0f, 360f);
+            bool tooClose = false;
+            foreach (float other in approachAngles)
+            {
+                if (Mathf.Abs(Mathf.DeltaAngle(angle, other)) < 60f) tooClose = true;
+            }
+            if (!tooClose) approachAngles.Add(angle);
+        }
+    }
+
+    private Vector3 PickSpawnPosition()
+    {
+        float angle = approachAngles.Count > 0 ? approachAngles[Random.Range(0, approachAngles.Count)] : Random.Range(0f, 360f);
+        angle += Random.Range(-approachSpreadDegrees, approachSpreadDegrees);
+        float radius = Random.Range(spawnRadiusMin, spawnRadiusMax);
+        Vector3 center = coreTarget != null ? new Vector3(coreTarget.position.x, 0f, coreTarget.position.z) : Vector3.zero;
+        return center + Quaternion.Euler(0f, angle, 0f) * Vector3.forward * radius;
+    }
+
     private void SpawnEnemy(Enemy prefab, float healthMultiplier)
     {
-        if (prefab == null || spawnPoints == null || spawnPoints.Length == 0)
+        if (prefab == null)
         {
             EnemiesRemaining--;
             return;
         }
 
-        Transform spawnPoint = spawnPoints[Random.Range(0, spawnPoints.Length)];
-        Enemy enemy = Instantiate(prefab, spawnPoint.position, Quaternion.identity);
+        Enemy enemy = Instantiate(prefab, PickSpawnPosition(), Quaternion.identity);
         enemy.Health.Configure(enemy.Health.MaxHealth * healthMultiplier);
-        enemy.Initialize(coreTarget);
+        enemy.Initialize(coreTarget, emergeFromGround: true);
         enemy.Despawned += () => EnemiesRemaining--;
     }
 }

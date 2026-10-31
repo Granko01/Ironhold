@@ -34,6 +34,9 @@ public class Enemy : MonoBehaviour
     public Health Health => health;
     public bool IsAlive => !hasDespawned;
 
+    // Middle of the body - where shots should aim so they connect with short and tall enemies alike.
+    public Vector3 AimPoint => transform.position + Vector3.up * height * 0.5f;
+
     private Transform coreTarget;
     private Health coreHealth;
     private Health health;
@@ -41,6 +44,17 @@ public class Enemy : MonoBehaviour
     private float attackTimer;
     private HitFlash hitFlash;
     private float height = 1.7f;
+
+    // How close an enemy's body gets to a wall's face before it stops to attack.
+    private const float WallReach = 0.45f;
+    private const float EmergeSeconds = 0.8f;
+    private static readonly Color DirtColor = new Color(0.36f, 0.26f, 0.16f);
+
+    private const float HeroAggroRange = 6f;
+    private const float HeroLeashRange = 9f;
+
+    private float emergeTimer;
+    private bool chasingHero;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetStatics() => active.Clear();
@@ -95,39 +109,99 @@ public class Enemy : MonoBehaviour
         active.Remove(this);
     }
 
-    public void Initialize(Transform core)
+    public void Initialize(Transform core, bool emergeFromGround = false)
     {
         coreTarget = core;
         coreHealth = core != null ? core.GetComponent<Health>() : null;
+
+        if (emergeFromGround)
+        {
+            emergeTimer = EmergeSeconds;
+            Vector3 p = transform.position;
+            transform.position = new Vector3(p.x, -height, p.z);
+            transform.rotation = Quaternion.LookRotation(Flat(core.position - p));
+            GameFx.Dust(p, 16);
+            GameFx.Debris(p + Vector3.up * 0.2f, DirtColor, 8, 4f, 0.18f);
+        }
     }
+
+    private static Vector3 Flat(Vector3 v) => new Vector3(v.x, 0f, v.z);
 
     private void Update()
     {
         if (coreTarget == null || hasDespawned) return;
 
+        // Climbing out of the dirt: rise in place, no walking or attacking yet.
+        if (emergeTimer > 0f)
+        {
+            emergeTimer -= Time.deltaTime;
+            float t = 1f - Mathf.Clamp01(emergeTimer / EmergeSeconds);
+            Vector3 p = transform.position;
+            transform.position = new Vector3(p.x, Mathf.Lerp(-height, 0f, 1f - (1f - t) * (1f - t)), p.z);
+            if (animator != null) animator.SetFloat(SpeedParam, 0f);
+            return;
+        }
+
         attackTimer -= Time.deltaTime;
 
-        Vector3 toCore = coreTarget.position - transform.position;
-        toCore.y = 0f;
+        // The hero gets chased when they come close; otherwise everything marches on the core.
+        PlayerController hero = UpdateHeroAggro();
+        Vector3 targetPosition = hero != null ? hero.transform.position : coreTarget.position;
+        Health targetHealth = hero != null ? hero.Health : coreHealth;
+        float reach = hero != null ? Mathf.Max(0.9f, attackRange * 0.8f) : attackRange;
 
-        if (toCore.sqrMagnitude > attackRange * attackRange)
+        Vector3 toTarget = targetPosition - transform.position;
+        toTarget.y = 0f;
+
+        // A wall in the way gets smashed first; the target is only reachable once it falls.
+        Wall wall = toTarget.sqrMagnitude > 0.0001f ? Wall.FindBlocking(transform.position, toTarget.normalized, WallReach) : null;
+        if (wall != null)
         {
-            transform.position = Vector3.MoveTowards(transform.position, coreTarget.position, moveSpeed * Time.deltaTime);
+            if (animator != null) animator.SetFloat(SpeedParam, 0f);
+            if (attackTimer <= 0f) Attack(wall.Health);
+
+            Vector3 toWall = wall.ClosestPoint(transform.position) - transform.position;
+            toWall.y = 0f;
+            if (toWall.sqrMagnitude > 0.0001f) transform.rotation = Quaternion.LookRotation(toWall);
+            return;
+        }
+
+        if (toTarget.sqrMagnitude > reach * reach)
+        {
+            // Flattened so enemies stay on the ground instead of drifting up to the core's centre height.
+            Vector3 destination = new Vector3(targetPosition.x, transform.position.y, targetPosition.z);
+            transform.position = Vector3.MoveTowards(transform.position, destination, moveSpeed * Time.deltaTime);
             if (animator != null) animator.SetFloat(SpeedParam, 1f);
         }
         else
         {
             if (animator != null) animator.SetFloat(SpeedParam, 0f);
-            if (attackTimer <= 0f) AttackCore();
+            if (attackTimer <= 0f) Attack(targetHealth);
         }
 
-        if (toCore.sqrMagnitude > 0.0001f) transform.rotation = Quaternion.LookRotation(toCore);
+        if (toTarget.sqrMagnitude > 0.0001f) transform.rotation = Quaternion.LookRotation(toTarget);
     }
 
-    private void AttackCore()
+    // Starts chasing a living hero who comes within aggro range, and gives up (back to the core)
+    // once they get clear - the wider give-up range stops enemies flip-flopping at the edge.
+    private PlayerController UpdateHeroAggro()
+    {
+        PlayerController hero = PlayerController.Instance;
+        if (hero == null || hero.IsDead)
+        {
+            chasingHero = false;
+            return null;
+        }
+
+        float range = chasingHero ? HeroLeashRange : HeroAggroRange;
+        chasingHero = IsWithin(hero.transform.position, range);
+        return chasingHero ? hero : null;
+    }
+
+    private void Attack(Health victim)
     {
         attackTimer = attackInterval;
-        coreHealth?.TakeDamage(attackDamage);
+        victim?.TakeDamage(attackDamage);
         if (animator != null) animator.SetTrigger(AttackParam);
         if (attackShake > 0f) IsoCameraFollow.AddTrauma(attackShake);
 

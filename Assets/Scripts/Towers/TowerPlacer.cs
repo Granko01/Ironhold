@@ -186,9 +186,10 @@ public class TowerPlacer : MonoBehaviour
         if (GameManager.Instance == null || !GameManager.Instance.SpendScrap(def.cost)) return false;
 
         Vector3 spawnPos = grid.CellToWorldCenter(hoveredCell);
-        Tower tower = Instantiate(def.prefab, spawnPos, Quaternion.identity);
-        tower.gameObject.AddComponent<PopIn>();
+        GameObject built = Instantiate(def.prefab, spawnPos, Quaternion.identity);
+        built.AddComponent<PopIn>();
         grid.Occupy(hoveredCell);
+        if (built.TryGetComponent(out Wall wall)) wall.SetGrid(grid);
 
         GameFx.Dust(spawnPos);
         IsoCameraFollow.AddTrauma(0.15f);

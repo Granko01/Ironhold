@@ -2,12 +2,10 @@ using UnityEngine;
 
 public class PlayerShooter : MonoBehaviour
 {
-    [SerializeField] private Projectile projectilePrefab;
+    [SerializeField] private HeroWeapon[] weapons;
     [SerializeField] private Transform firePoint;
-    [SerializeField] private float range = 10f;
-    [SerializeField] private float fireRate = 4f;
-    [SerializeField] private float damage = 10f;
-    [SerializeField] private float rotationSpeed = 720f;
+    [SerializeField] private float rotationSpeed = 1080f;
+    [SerializeField] private float fireConeDegrees = 15f;
     [SerializeField] private Animator animator;
 
     private static readonly int ShootParam = Animator.StringToHash("Shoot");
@@ -16,10 +14,17 @@ public class PlayerShooter : MonoBehaviour
     private bool warnedMissingRefs;
     private bool isDead;
     private Enemy currentTarget;
+    private int equippedIndex;
 
-    public void Configure(Projectile prefab, Transform firePointTransform)
+    // PlayerController leaves facing to the shooter while it has something to aim at.
+    public bool HasTarget => currentTarget != null && !isDead;
+    public HeroWeaponKind EquippedKind => Equipped != null ? Equipped.kind : HeroWeaponKind.Rifle;
+
+    private HeroWeapon Equipped => weapons != null && equippedIndex < weapons.Length ? weapons[equippedIndex] : null;
+
+    public void Configure(HeroWeapon[] heroWeapons, Transform firePointTransform)
     {
-        projectilePrefab = prefab;
+        weapons = heroWeapons;
         firePoint = firePointTransform;
     }
 
@@ -28,23 +33,50 @@ public class PlayerShooter : MonoBehaviour
         if (animator == null) animator = GetComponentInChildren<Animator>();
 
         Health health = GetComponent<Health>();
-        if (health != null) health.Died += () => isDead = true;
+        if (health != null)
+        {
+            health.Died += () => isDead = true;
+            health.Revived += () => isDead = false;
+        }
+
+        Equip(HeroWeaponKind.Rifle);
+    }
+
+    public void Equip(HeroWeaponKind kind)
+    {
+        if (weapons == null) return;
+
+        for (int i = 0; i < weapons.Length; i++)
+        {
+            bool match = weapons[i].kind == kind;
+            if (match) equippedIndex = i;
+            if (weapons[i].model != null) weapons[i].model.SetActive(match);
+        }
+
+        currentTarget = null;
+        cooldownTimer = 0.2f;
     }
 
     private void LateUpdate()
     {
         cooldownTimer -= Time.deltaTime;
 
-        if (isDead || TowerPlacer.IsPlacing) return;
+        HeroWeapon weapon = Equipped;
+        if (isDead || TowerPlacer.IsPlacing || weapon == null)
+        {
+            currentTarget = null;
+            return;
+        }
 
-        AcquireTarget();
+        AcquireTarget(weapon.range);
         if (currentTarget == null) return;
 
-        AimAtTarget();
+        float angleToTarget = AimAtTarget();
 
-        if (cooldownTimer > 0f) return;
+        // Waiting until the hero roughly faces the target stops shots spraying sideways mid-turn.
+        if (cooldownTimer > 0f || angleToTarget > fireConeDegrees) return;
 
-        if (projectilePrefab == null || firePoint == null)
+        if (weapon.projectilePrefab == null || firePoint == null)
         {
             if (!warnedMissingRefs)
             {
@@ -54,36 +86,38 @@ public class PlayerShooter : MonoBehaviour
             return;
         }
 
-        Fire();
-        cooldownTimer = 1f / (fireRate * RunModifiers.FireRate(TowerKind.Hero));
+        Fire(weapon);
+        cooldownTimer = 1f / (weapon.fireRate * RunModifiers.FireRate(TowerKind.Hero));
     }
 
-    private void AcquireTarget()
+    private void AcquireTarget(float range)
     {
         if (currentTarget != null && currentTarget.IsAlive && currentTarget.IsWithin(transform.position, range)) return;
         currentTarget = Enemy.FindClosest(transform.position, range);
     }
 
-    private void AimAtTarget()
+    // Returns the remaining yaw (degrees) between the hero's facing and the target.
+    private float AimAtTarget()
     {
         Vector3 direction = currentTarget.transform.position - transform.position;
         direction.y = 0f;
-        if (direction.sqrMagnitude < 0.0001f) return;
+        if (direction.sqrMagnitude < 0.0001f) return 0f;
 
         Quaternion targetRotation = Quaternion.LookRotation(direction);
         transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
+        return Quaternion.Angle(transform.rotation, targetRotation);
     }
 
-    private void Fire()
+    private void Fire(HeroWeapon weapon)
     {
-        Projectile.FireVolley(projectilePrefab, firePoint, damage * RunModifiers.Damage(TowerKind.Hero), currentTarget, TowerKind.Hero);
-        Sfx.Play(SfxId.Shoot, 1.25f, 0.8f);
+        Projectile.FireVolley(weapon.projectilePrefab, firePoint, weapon.damage * RunModifiers.Damage(TowerKind.Hero), currentTarget, TowerKind.Hero);
+        Sfx.Play(weapon.fireSound, weapon.firePitch, weapon.fireVolume);
         if (animator != null) animator.SetTrigger(ShootParam);
     }
 
     private void OnDrawGizmosSelected()
     {
         Gizmos.color = Color.cyan;
-        Gizmos.DrawWireSphere(transform.position, range);
+        Gizmos.DrawWireSphere(transform.position, Equipped != null ? Equipped.range : 10f);
     }
 }

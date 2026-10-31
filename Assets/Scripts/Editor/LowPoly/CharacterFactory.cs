@@ -36,6 +36,11 @@ public static class CharacterFactory
         // Baked-in forward torso lean (degrees) for a permanently hunched stance (e.g. the
         // Runner). Animation curves add on top of this rather than overriding it.
         public float torsoRestLeanX;
+
+        // Baked-in arm hinge rotations (e.g. the Commander holding a weapon up at chest height).
+        // Like torsoRestLeanX, the arm swing curves oscillate around these instead of hanging straight.
+        public Vector3 armRestEulerL;
+        public Vector3 armRestEulerR;
     }
 
     public static readonly BipedProportions PlayerProportions = new BipedProportions
@@ -53,6 +58,9 @@ public static class CharacterFactory
         armSpacingX = 0.4f,
         armY = 0.26f,
         torsoRestLeanX = 0f,
+        // Right arm reaches forward-inward for the grip, left arm crosses over to steady the barrel.
+        armRestEulerL = new Vector3(-62f, 42f, 0f),
+        armRestEulerR = new Vector3(-58f, -30f, 0f),
     };
 
     public static readonly BipedProportions GruntProportions = new BipedProportions
@@ -185,6 +193,7 @@ public static class CharacterFactory
         public Transform legRHinge;
         public Transform weaponSocket;
         public Transform muzzle;
+        public Transform rifle;
     }
 
     public static BipedRig BuildBiped(GameObject root, BipedProportions p, BipedColors c, string namePrefix, bool hasWeapon = true)
@@ -217,15 +226,26 @@ public static class CharacterFactory
 
         rig.armLHinge = LowPolyKit.CreateHingeLimb("ArmL", torso, new Vector3(-p.armSpacingX, p.armY, 0f), p.armSize, uniformMat, out _);
         rig.armRHinge = LowPolyKit.CreateHingeLimb("ArmR", torso, new Vector3(p.armSpacingX, p.armY, 0f), p.armSize, uniformMat, out _);
+        rig.armLHinge.localRotation = Quaternion.Euler(p.armRestEulerL);
+        rig.armRHinge.localRotation = Quaternion.Euler(p.armRestEulerR);
 
         GameObject socketGo = new GameObject("WeaponSocket");
         socketGo.transform.SetParent(rig.armRHinge, false);
         socketGo.transform.localPosition = new Vector3(0f, -p.armSize.y, 0.12f);
+        // Cancels the arm's rest rotation so a held weapon points straight ahead in the rest pose.
+        socketGo.transform.localRotation = Quaternion.Inverse(Quaternion.Euler(p.armRestEulerR));
         rig.weaponSocket = socketGo.transform;
 
         if (hasWeapon)
         {
-            rig.muzzle = BuildRifle(rig.weaponSocket, weaponBodyMat, weaponDarkMat);
+            float handSize = p.armSize.x * 1.05f;
+            LowPolyKit.CreateBlock("HandR", rig.armRHinge, new Vector3(0f, -p.armSize.y - handSize * 0.35f, 0f), Vector3.zero, Vector3.one * handSize, skinMat);
+            LowPolyKit.CreateBlock("HandL", rig.armLHinge, new Vector3(0f, -p.armSize.y - handSize * 0.35f, 0f), Vector3.zero, Vector3.one * handSize, skinMat);
+
+            GameObject rifle = new GameObject("Rifle");
+            rifle.transform.SetParent(rig.weaponSocket, false);
+            rig.rifle = rifle.transform;
+            rig.muzzle = BuildRifle(rig.rifle, weaponBodyMat, weaponDarkMat);
         }
         else
         {
@@ -259,6 +279,26 @@ public static class CharacterFactory
         muzzle.transform.SetParent(socket, false);
         muzzle.transform.localPosition = new Vector3(0f, 0.02f, 0.46f);
         return muzzle.transform;
+    }
+
+    // A recurve bow held upright with an arrow nocked and pointing forward. Returns the arrow tip.
+    public static Transform BuildBow(Transform socket, Material woodMat, Material stringMat, Material arrowMat)
+    {
+        LowPolyKit.CreateBlock("Grip", socket, new Vector3(0f, 0.02f, 0.14f), Vector3.zero, new Vector3(0.06f, 0.16f, 0.06f), woodMat);
+        LowPolyKit.CreateBlock("LimbUpper", socket, new Vector3(0f, 0.27f, 0.1f), new Vector3(-16f, 0f, 0f), new Vector3(0.05f, 0.36f, 0.05f), woodMat);
+        LowPolyKit.CreateBlock("LimbLower", socket, new Vector3(0f, -0.23f, 0.1f), new Vector3(16f, 0f, 0f), new Vector3(0.05f, 0.36f, 0.05f), woodMat);
+        LowPolyKit.CreateBlock("TipUpper", socket, new Vector3(0f, 0.46f, 0.1f), new Vector3(20f, 0f, 0f), new Vector3(0.045f, 0.08f, 0.045f), woodMat);
+        LowPolyKit.CreateBlock("TipLower", socket, new Vector3(0f, -0.42f, 0.1f), new Vector3(-20f, 0f, 0f), new Vector3(0.045f, 0.08f, 0.045f), woodMat);
+        LowPolyKit.CreateBlock("String", socket, new Vector3(0f, 0.02f, 0.02f), Vector3.zero, new Vector3(0.012f, 0.86f, 0.012f), stringMat);
+
+        LowPolyKit.CreateBlock("ArrowShaft", socket, new Vector3(0f, 0.02f, 0.22f), new Vector3(90f, 0f, 0f), new Vector3(0.025f, 0.24f, 0.025f), woodMat, PrimitiveType.Cylinder);
+        LowPolyKit.CreateBlock("ArrowHead", socket, new Vector3(0f, 0.02f, 0.47f), new Vector3(0f, 45f, 0f), new Vector3(0.055f, 0.03f, 0.055f), arrowMat);
+        LowPolyKit.CreateBlock("Fletching", socket, new Vector3(0f, 0.02f, 0.02f), Vector3.zero, new Vector3(0.012f, 0.07f, 0.09f), arrowMat);
+
+        GameObject tip = new GameObject("ArrowTip");
+        tip.transform.SetParent(socket, false);
+        tip.transform.localPosition = new Vector3(0f, 0.02f, 0.5f);
+        return tip.transform;
     }
 
     // --- Animation -----------------------------------------------------
@@ -306,8 +346,8 @@ public static class CharacterFactory
         AnimationClip idle = LowPolyAnimKit.GetOrCreateClip($"{namePrefix}_Idle", loop: true);
         Times5(2.2f, out float[] idleTimes);
         LowPolyAnimKit.SetPositionYCurve(idle, hips, idleTimes, new[] { hipsY, hipsY + 0.03f, hipsY, hipsY + 0.03f, hipsY });
-        LowPolyAnimKit.SetEulerCurve(idle, armL, idleTimes, SwingX(6f, false));
-        LowPolyAnimKit.SetEulerCurve(idle, armR, idleTimes, SwingX(6f, true));
+        LowPolyAnimKit.SetEulerCurve(idle, armL, idleTimes, Around(SwingX(6f, false), p.armRestEulerL));
+        LowPolyAnimKit.SetEulerCurve(idle, armR, idleTimes, Around(SwingX(6f, true), p.armRestEulerR));
         LowPolyAnimKit.SetEulerCurve(idle, torso, idleTimes, Constant5(new Vector3(p.torsoRestLeanX, 0f, 0f)));
         LowPolyAnimKit.SetEulerCurve(idle, legL, idleTimes, Constant5(Vector3.zero));
         LowPolyAnimKit.SetEulerCurve(idle, legR, idleTimes, Constant5(Vector3.zero));
@@ -322,10 +362,10 @@ public static class CharacterFactory
 
         AnimationClip action = LowPolyAnimKit.GetOrCreateClip($"{namePrefix}_{actionParamName}", loop: false);
         float[] actionTimes = { 0f, 0.08f, 0.22f, 0.4f };
-        LowPolyAnimKit.SetEulerCurve(action, armR, actionTimes, ActionSwing(actionArmSwingDeg, 0f));
+        LowPolyAnimKit.SetEulerCurve(action, armR, actionTimes, Around(ActionSwing(actionArmSwingDeg, 0f), p.armRestEulerR));
         if (actionBothArms)
         {
-            LowPolyAnimKit.SetEulerCurve(action, armL, actionTimes, ActionSwing(actionArmSwingDeg, 0f));
+            LowPolyAnimKit.SetEulerCurve(action, armL, actionTimes, Around(ActionSwing(actionArmSwingDeg, 0f), p.armRestEulerL));
         }
         LowPolyAnimKit.SetEulerCurve(action, torso, actionTimes, ActionSwing(actionTorsoLeanDeg, p.torsoRestLeanX));
 
@@ -333,8 +373,8 @@ public static class CharacterFactory
         float[] deathTimes = { 0f, 0.3f, 0.6f };
         LowPolyAnimKit.SetEulerCurve(death, torso, deathTimes, new[] { new Vector3(p.torsoRestLeanX, 0f, 0f), new Vector3(70f, 0f, 12f), new Vector3(92f, 0f, 12f) });
         LowPolyAnimKit.SetPositionYCurve(death, hips, deathTimes, new[] { hipsY, hipsY * 0.5f, hipsY * 0.35f });
-        LowPolyAnimKit.SetEulerCurve(death, armL, deathTimes, new[] { Vector3.zero, new Vector3(-30f, 0f, 0f), new Vector3(-40f, 0f, 0f) });
-        LowPolyAnimKit.SetEulerCurve(death, armR, deathTimes, new[] { Vector3.zero, new Vector3(-20f, 0f, 0f), new Vector3(-30f, 0f, 0f) });
+        LowPolyAnimKit.SetEulerCurve(death, armL, deathTimes, new[] { p.armRestEulerL, new Vector3(-30f, 0f, 0f), new Vector3(-40f, 0f, 0f) });
+        LowPolyAnimKit.SetEulerCurve(death, armR, deathTimes, new[] { p.armRestEulerR, new Vector3(-20f, 0f, 0f), new Vector3(-30f, 0f, 0f) });
 
         controllerWrapper = LowPolyAnimKit.BuildBipedController(
             $"{namePrefix}Animator", idle, primaryGait.stateName, primary, secondary, actionParamName, action, death, runThreshold: 1.2f);
@@ -349,8 +389,11 @@ public static class CharacterFactory
         LowPolyAnimKit.SetPositionYCurve(clip, hips, times, new[] { hipsY, hipsY + gait.hipsBob, hipsY, hipsY + gait.hipsBob, hipsY });
         LowPolyAnimKit.SetEulerCurve(clip, legL, times, SwingX(gait.legSwingDeg, false));
         LowPolyAnimKit.SetEulerCurve(clip, legR, times, SwingX(gait.legSwingDeg, true));
-        LowPolyAnimKit.SetEulerCurve(clip, armL, times, SwingX(gait.armSwingDeg, true));
-        LowPolyAnimKit.SetEulerCurve(clip, armR, times, SwingX(gait.armSwingDeg, false));
+        // Arms holding a weapon only bob a little instead of swinging the gun around.
+        float armSwingL = p.armRestEulerL == Vector3.zero ? gait.armSwingDeg : gait.armSwingDeg * 0.2f;
+        float armSwingR = p.armRestEulerR == Vector3.zero ? gait.armSwingDeg : gait.armSwingDeg * 0.2f;
+        LowPolyAnimKit.SetEulerCurve(clip, armL, times, Around(SwingX(armSwingL, true), p.armRestEulerL));
+        LowPolyAnimKit.SetEulerCurve(clip, armR, times, Around(SwingX(armSwingR, false), p.armRestEulerR));
         LowPolyAnimKit.SetEulerCurve(clip, torso, times, Constant5(new Vector3(p.torsoRestLeanX + gait.torsoLeanExtra, 0f, 0f)));
 
         return clip;
@@ -444,6 +487,13 @@ public static class CharacterFactory
             Vector3.zero,
             new Vector3(sign * -amplitudeDeg, 0f, 0f),
         };
+    }
+
+    private static Vector3[] Around(Vector3[] curve, Vector3 rest)
+    {
+        var shifted = new Vector3[curve.Length];
+        for (int i = 0; i < curve.Length; i++) shifted[i] = curve[i] + rest;
+        return shifted;
     }
 
     private static Vector3[] Constant5(Vector3 value)

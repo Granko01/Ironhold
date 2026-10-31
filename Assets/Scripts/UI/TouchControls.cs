@@ -2,7 +2,8 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 
 // Full-screen touch surface that sits behind the HUD and tower cards. A press either places
-// the selected tower at the tapped ground cell, or spawns a floating joystick under the finger.
+// the selected tower at the tapped ground cell, sends the squad to the tapped spot, or spawns a
+// floating joystick under the finger.
 public class TouchControls : MonoBehaviour, IPointerDownHandler, IDragHandler, IPointerUpHandler
 {
     [SerializeField] private TowerPlacer placer;
@@ -43,6 +44,12 @@ public class TouchControls : MonoBehaviour, IPointerDownHandler, IDragHandler, I
 
     public void OnPointerDown(PointerEventData eventData)
     {
+        if (SquadCommander.IsChoosing)
+        {
+            SquadCommander.Instance.SendToScreenPoint(eventData.position);
+            return;
+        }
+
         if (TowerPlacer.IsPlacing && placer != null)
         {
             placer.TryPlaceAtScreenPoint(eventData.position);

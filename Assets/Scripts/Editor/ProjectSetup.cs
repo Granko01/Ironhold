@@ -20,18 +20,14 @@ public static class ProjectSetup
 
     private static readonly string[] GeneratedSceneObjectNames =
     {
-        "Ground", "Core", "Player", "GameManager", "EnemySpawner", "TowerPlacer", "PlacementGrid", "EventSystem", "UICanvas", "EnvironmentDecor", "Arena", "PostFX", "Directional Light"
+        "Ground", "Core", "Player", "GameManager", "EnemySpawner", "TowerPlacer", "PlacementGrid", "EventSystem", "UICanvas", "EnvironmentDecor", "Arena", "PostFX", "Directional Light", "Squad", "LootSpawner", "BaseWalls"
     };
 
     private const string PostFxProfilePath = "Assets/Settings/GameplayPostFX.asset";
 
-    private static readonly Vector3[] SpawnPositions =
-    {
-        new Vector3(20f, 0f, 20f),
-        new Vector3(-20f, 0f, 20f),
-        new Vector3(20f, 0f, -20f),
-        new Vector3(-20f, 0f, -20f),
-    };
+    // The starting fort: a square ring of wall blocks this many grid cells out from the core,
+    // leaving room inside for towers.
+    private const int BaseWallRingCells = 4;
 
     // Shared by the arena fog and the camera clear colour so the world fades into the background.
     private static readonly Color HorizonColor = new Color(0.56f, 0.74f, 0.66f);
@@ -41,6 +37,7 @@ public static class ProjectSetup
     private static readonly Color EnemyRingColor = new Color(0.95f, 0.22f, 0.18f);
     private static readonly Color PlayerRingColor = new Color(0.25f, 0.75f, 1f);
 
+    private static readonly Color WallAccent = new Color(0.72f, 0.68f, 0.62f);
     private static readonly Color GunAccent = new Color(1f, 0.76f, 0.22f);
     private static readonly Color CannonAccent = new Color(1f, 0.48f, 0.18f);
     private static readonly Color SniperAccent = new Color(0.45f, 0.88f, 0.35f);
@@ -132,13 +129,15 @@ public static class ProjectSetup
         ConfigureProjectileBehavior(sniperProjectile, speed: 45f, lifetime: 1.5f, fxColor: new Color(0.85f, 1f, 0.5f), glow: 3f, pierceCount: 3);
         ConfigureProjectileBehavior(teslaBoltProjectile, speed: 30f, lifetime: 2f, fxColor: new Color(0.4f, 0.85f, 1f), glow: 3f, chainCount: 4, chainRange: 4.5f);
         ConfigureProjectileBehavior(missileProjectile, speed: 12f, lifetime: 5f, fxColor: new Color(1f, 0.45f, 0.1f), glow: 2.5f, homing: true, splashRadius: 2f);
+        Projectile arrowProjectile = GetOrCreateArrowPrefab();
+        ConfigureProjectileBehavior(arrowProjectile, speed: 28f, lifetime: 1.5f, fxColor: new Color(1f, 0.95f, 0.75f), glow: 1f, pierceCount: 2);
         Enemy enemyPrefab = GetOrCreateEnemyPrefab();
         Enemy runnerPrefab = GetOrCreateRunnerPrefab();
         Enemy brutePrefab = GetOrCreateBrutePrefab();
         Enemy spitterPrefab = GetOrCreateSpitterPrefab();
         Enemy bomberPrefab = GetOrCreateBomberPrefab();
         Enemy engineerPrefab = GetOrCreateEngineerPrefab();
-        GameObject wallPrefab = GetOrCreateWallPrefab();
+        Wall wallPrefab = GetOrCreateWallPrefab();
         GameObject bossPrefab = GetOrCreateBossPrefab();
 
         Tower gunTower = GetOrCreateTowerPrefab("TowerGun", TowerStyle.Gun, new Color(0.56f, 0.56f, 0.6f), GunAccent, 1f, 8f, 3f, 8f, bulletProjectile);
@@ -153,7 +152,12 @@ public static class ProjectSetup
         ConfigureTower(teslaTower, TowerKind.Tesla, SfxId.Shoot, 1.8f);
         ConfigureTower(missileTower, TowerKind.Missile, SfxId.Shoot, 0.4f);
 
-        GameObject playerPrefabGo = GetOrCreatePlayerPrefab(bulletProjectile);
+        GameObject playerPrefabGo = GetOrCreatePlayerPrefab(bulletProjectile, arrowProjectile);
+        DogCompanion dogPrefab = GetOrCreateDogPrefab();
+        Soldier soldierPrefab = GetOrCreateSoldierPrefab(bulletProjectile);
+        Gate gatePrefab = GetOrCreateGatePrefab();
+        Watchtower watchtowerPrefab = GetOrCreateWatchtowerPrefab(soldierPrefab);
+        LootCache lootCachePrefab = GetOrCreateLootCachePrefab();
         GameObject corePrefabGo = GetOrCreateCorePrefab();
 
         BuildArena();
@@ -200,26 +204,13 @@ public static class ProjectSetup
         GameFx gameFx = LowPolyKit.GetOrAddComponent<GameFx>(gameManagerGo);
         SetPrivateField(gameFx, "particleMaterial", GetOrCreateParticleMaterial());
 
-        GameObject spawnerGo = GameObject.Find("EnemySpawner");
-        if (spawnerGo == null)
-        {
-            spawnerGo = new GameObject("EnemySpawner");
-            spawnerGo.AddComponent<EnemySpawner>();
-
-            for (int i = 0; i < SpawnPositions.Length; i++)
-            {
-                GameObject sp = new GameObject($"SpawnPoint_{i}");
-                sp.transform.SetParent(spawnerGo.transform);
-                sp.transform.position = SpawnPositions[i];
-            }
-        }
+        GameObject spawnerGo = FindOrCreateEmpty("EnemySpawner");
+        // Enemies now dig up out of the treeline; the old fixed portal spawn points are gone.
+        LowPolyKit.ClearChildren(spawnerGo);
 
         // Applied on every build (not only when the spawner is first created) so roster and
         // balance changes here reach scenes that were built before.
-        var spawnPoints = new Transform[spawnerGo.transform.childCount];
-        for (int i = 0; i < spawnPoints.Length; i++) spawnPoints[i] = spawnerGo.transform.GetChild(i);
-
-        EnemySpawner enemySpawner = spawnerGo.GetComponent<EnemySpawner>();
+        EnemySpawner enemySpawner = LowPolyKit.GetOrAddComponent<EnemySpawner>(spawnerGo);
         enemySpawner.Configure(new[]
         {
             new EnemySpawnEntry { prefab = enemyPrefab, threatCost = 1, firstWave = 1, weight = 4f },
@@ -228,7 +219,7 @@ public static class ProjectSetup
             new EnemySpawnEntry { prefab = bomberPrefab, threatCost = 2, firstWave = 4, weight = 1.2f },
             new EnemySpawnEntry { prefab = brutePrefab, threatCost = 4, firstWave = 6, weight = 1f },
             new EnemySpawnEntry { prefab = engineerPrefab, threatCost = 2, firstWave = 7, weight = 1f },
-        }, bossPrefab != null ? bossPrefab.GetComponent<Enemy>() : null, core.transform, spawnPoints);
+        }, bossPrefab != null ? bossPrefab.GetComponent<Enemy>() : null, core.transform);
         EditorUtility.SetDirty(enemySpawner);
 
         GameObject towerPlacerGo = GameObject.Find("TowerPlacer");
@@ -240,16 +231,25 @@ public static class ProjectSetup
         TowerPlacer towerPlacer = towerPlacerGo.GetComponent<TowerPlacer>();
         SetPrivateField(towerPlacer, "grid", grid);
         SetPrivateField(towerPlacer, "player", player.transform);
-        SetTowerDefinitions(towerPlacer, new (string name, int cost, Tower prefab, Color accentColor)[]
+        SetTowerDefinitions(towerPlacer, new (string name, int cost, GameObject prefab, Color accentColor)[]
         {
-            ("Gun", 50, gunTower, GunAccent),
-            ("Cannon", 120, cannonTower, CannonAccent),
-            ("Sniper", 150, sniperTower, SniperAccent),
-            ("Tesla", 90, teslaTower, TeslaAccent),
-            ("Missile", 180, missileTower, MissileAccent),
+            ("Wall", 25, wallPrefab.gameObject, WallAccent),
+            ("Gun", 50, gunTower.gameObject, GunAccent),
+            ("Cannon", 120, cannonTower.gameObject, CannonAccent),
+            ("Sniper", 150, sniperTower.gameObject, SniperAccent),
+            ("Tesla", 90, teslaTower.gameObject, TeslaAccent),
+            ("Missile", 180, missileTower.gameObject, MissileAccent),
         });
 
-        BuildGameplayUI(enemySpawner, coreHealth, towerPlacer);
+        SquadCommander squad = BuildSquad(soldierPrefab, player.transform);
+        // Outposts were tried and dropped; clear any left in scenes built with them.
+        DestroyIfExists("Outposts");
+        BuildBaseWalls(wallPrefab, gatePrefab, watchtowerPrefab, grid, player.transform);
+
+        GameObject lootGo = FindOrCreateEmpty("LootSpawner");
+        LowPolyKit.GetOrAddComponent<LootCacheSpawner>(lootGo).Configure(lootCachePrefab, player.transform, enemySpawner);
+
+        BuildGameplayUI(enemySpawner, coreHealth, towerPlacer, player.GetComponent<PlayerShooter>(), dogPrefab, squad);
 
         Camera mainCamera = Camera.main;
         if (mainCamera != null)
@@ -731,31 +731,42 @@ public static class ProjectSetup
         return prefab.GetComponent<Enemy>();
     }
 
-    private static GameObject GetOrCreateWallPrefab()
+    // A square stone block that fills one grid cell, so a row of them reads as one continuous wall.
+    private static Wall GetOrCreateWallPrefab()
     {
-        // A static structural prop, like the environment decor - no placement-grid or
-        // pathing integration, since walls blocking enemy movement/taking damage would be
-        // a new gameplay system rather than a visual one.
         string path = $"{PrefabFolder}/Wall.prefab";
         GameObject go = LowPolyKit.BeginPrefabEdit(path, out bool wasLoaded);
         LowPolyKit.ClearChildren(go);
         LowPolyKit.RemoveOwnMesh(go);
         go.name = "Wall";
 
-        Material coreMat = GetOrCreateMaterial("WallConcrete", new Color(0.32f, 0.32f, 0.34f), unlit: false);
-        Material trimMat = GetOrCreateMaterial("WallTrim", new Color(0.18f, 0.18f, 0.2f), unlit: false);
+        Material stoneMat = GetOrCreateMaterial("WallStone", new Color(0.62f, 0.58f, 0.52f), unlit: false);
+        Material darkStoneMat = GetOrCreateMaterial("WallStoneDark", new Color(0.42f, 0.39f, 0.36f), unlit: false);
+        Material woodMat = GetOrCreateMaterial("WallWood", new Color(0.5f, 0.34f, 0.18f), unlit: false);
 
-        LowPolyKit.CreateBlock("Slab", go.transform, new Vector3(0f, 0.7f, 0f), Vector3.zero, new Vector3(2.6f, 1.4f, 0.4f), coreMat);
-        LowPolyKit.CreateBlock("BaseTrim", go.transform, new Vector3(0f, 0.08f, 0f), Vector3.zero, new Vector3(2.7f, 0.16f, 0.5f), trimMat);
-        LowPolyKit.CreateBlock("TopTrim", go.transform, new Vector3(0f, 1.42f, 0f), Vector3.zero, new Vector3(2.7f, 0.12f, 0.46f), trimMat);
-        LowPolyKit.CreateBlock("PanelL", go.transform, new Vector3(-0.85f, 0.7f, 0.21f), Vector3.zero, new Vector3(0.08f, 1.2f, 0.04f), trimMat);
-        LowPolyKit.CreateBlock("PanelR", go.transform, new Vector3(0.85f, 0.7f, 0.21f), Vector3.zero, new Vector3(0.08f, 1.2f, 0.04f), trimMat);
+        LowPolyKit.CreateBlock("Footing", go.transform, new Vector3(0f, 0.12f, 0f), Vector3.zero, new Vector3(2.95f, 0.24f, 2.95f), darkStoneMat);
+        LowPolyKit.CreateBlock("Body", go.transform, new Vector3(0f, 0.8f, 0f), Vector3.zero, new Vector3(2.8f, 1.2f, 2.8f), stoneMat);
+        LowPolyKit.CreateBlock("Cap", go.transform, new Vector3(0f, 1.44f, 0f), Vector3.zero, new Vector3(2.9f, 0.1f, 2.9f), darkStoneMat);
+
+        // Merlons around the rim, plus a wooden plank band so the block reads as a fortification.
+        for (int x = -1; x <= 1; x += 2)
+        {
+            for (int z = -1; z <= 1; z += 2)
+            {
+                LowPolyKit.CreateBlock("Merlon", go.transform, new Vector3(x * 1.1f, 1.7f, z * 1.1f), Vector3.zero, new Vector3(0.55f, 0.42f, 0.55f), stoneMat);
+            }
+        }
+        LowPolyKit.CreateBlock("PlankBand", go.transform, new Vector3(0f, 0.7f, 0f), Vector3.zero, new Vector3(2.84f, 0.16f, 2.84f), woodMat);
 
         BoxCollider collider = LowPolyKit.GetOrAddComponent<BoxCollider>(go);
-        collider.center = new Vector3(0f, 0.75f, 0f);
-        collider.size = new Vector3(2.7f, 1.5f, 0.5f);
+        collider.center = new Vector3(0f, 0.95f, 0f);
+        collider.size = new Vector3(2.9f, 1.9f, 2.9f);
 
-        return LowPolyKit.EndPrefabEdit(go, path, wasLoaded);
+        LowPolyKit.GetOrAddComponent<Health>(go).Configure(300f);
+        LowPolyKit.GetOrAddComponent<HitFlash>(go);
+        LowPolyKit.GetOrAddComponent<Wall>(go);
+
+        return LowPolyKit.EndPrefabEdit(go, path, wasLoaded).GetComponent<Wall>();
     }
 
     private static GameObject GetOrCreateBossPrefab()
@@ -967,7 +978,7 @@ public static class ProjectSetup
         tip.GetComponent<Renderer>().sharedMaterial = GetOrCreateMaterial("MissileTip", tipColor.Value, unlit: true);
     }
 
-    private static void SetTowerDefinitions(TowerPlacer placer, (string name, int cost, Tower prefab, Color accentColor)[] defs)
+    private static void SetTowerDefinitions(TowerPlacer placer, (string name, int cost, GameObject prefab, Color accentColor)[] defs)
     {
         var so = new SerializedObject(placer);
         SerializedProperty arrayProp = so.FindProperty("towerDefinitions");
@@ -985,7 +996,7 @@ public static class ProjectSetup
         so.ApplyModifiedProperties();
     }
 
-    private static GameObject GetOrCreatePlayerPrefab(Projectile projectilePrefab)
+    private static GameObject GetOrCreatePlayerPrefab(Projectile bulletPrefab, Projectile arrowPrefab)
     {
         string path = $"{PrefabFolder}/Player.prefab";
         GameObject go = LowPolyKit.BeginPrefabEdit(path, out bool wasLoaded);
@@ -999,7 +1010,8 @@ public static class ProjectSetup
         collider.height = 2f;
 
         LowPolyKit.GetOrAddComponent<Rigidbody>(go);
-        LowPolyKit.GetOrAddComponent<Health>(go);
+        LowPolyKit.GetOrAddComponent<Health>(go).Configure(200f);
+        LowPolyKit.GetOrAddComponent<HitFlash>(go);
         LowPolyKit.GetOrAddComponent<PlayerController>(go);
 
         var colors = new CharacterFactory.BipedColors
@@ -1012,26 +1024,401 @@ public static class ProjectSetup
             weaponDark = new Color(0.08f, 0.08f, 0.09f),
         };
 
-        CharacterFactory.BipedRig rig = CharacterFactory.BuildBiped(go, CharacterFactory.PlayerProportions, colors, "Player");
+        CharacterFactory.BipedProportions proportions = CharacterFactory.PlayerProportions;
+        CharacterFactory.BipedRig rig = CharacterFactory.BuildBiped(go, proportions, colors, "Player");
+        AddHeroGear(rig, proportions, colors);
+
+        // Chunkier than an enemy grunt's rifle so the hero's weapon reads at phone size.
+        rig.rifle.localScale = Vector3.one * 1.3f;
+
+        GameObject bow = new GameObject("Bow");
+        bow.transform.SetParent(rig.weaponSocket, false);
+        bow.transform.localScale = Vector3.one * 1.2f;
+        CharacterFactory.BuildBow(bow.transform,
+            GetOrCreateMaterial("PlayerBowWood", new Color(0.5f, 0.32f, 0.16f), unlit: false),
+            GetOrCreateMaterial("PlayerBowString", new Color(0.92f, 0.9f, 0.82f), unlit: true),
+            GetOrCreateMaterial("PlayerBowArrow", new Color(0.85f, 0.88f, 0.92f), unlit: false));
+        bow.SetActive(false);
+
         AddTeamRing(go.transform, 0.65f, PlayerRingColor);
-        CharacterFactory.BuildAnimations(go, rig, CharacterFactory.PlayerProportions, "Player",
+        CharacterFactory.BuildAnimations(go, rig, proportions, "Player",
             CharacterFactory.WalkGait, CharacterFactory.RunGait, "Shoot",
-            35f, 8f, false, out AnimatorController controller);
+            12f, 4f, true, out AnimatorController controller);
 
         Animator animator = LowPolyKit.GetOrAddComponent<Animator>(go);
         animator.runtimeAnimatorController = controller;
         animator.applyRootMotion = false;
 
         // Kept as a stable, non-animated child (rather than the visual rifle's muzzle) so
-        // shot direction never drifts while the recoil/arm-swing animation is playing.
+        // shot direction never drifts while the recoil animation is playing. It starts where
+        // the muzzle sits in the rest pose so bullets visibly leave the gun.
         GameObject firePoint = new GameObject("FirePoint");
         firePoint.transform.SetParent(go.transform, false);
-        firePoint.transform.localPosition = new Vector3(0.22f, 1.35f, 0.75f);
+        firePoint.transform.localPosition = go.transform.InverseTransformPoint(rig.muzzle.position);
 
         PlayerShooter shooter = LowPolyKit.GetOrAddComponent<PlayerShooter>(go);
-        shooter.Configure(projectilePrefab, firePoint.transform);
+        shooter.Configure(new[]
+        {
+            new HeroWeapon
+            {
+                kind = HeroWeaponKind.Rifle, model = rig.rifle.gameObject, projectilePrefab = bulletPrefab,
+                fireRate = 4f, damage = 10f, range = 10f, fireSound = SfxId.Shoot, firePitch = 1.25f, fireVolume = 0.8f,
+            },
+            new HeroWeapon
+            {
+                kind = HeroWeaponKind.Bow, model = bow, projectilePrefab = arrowPrefab,
+                fireRate = 1.5f, damage = 28f, range = 12f, fireSound = SfxId.Shoot, firePitch = 1.9f, fireVolume = 0.55f,
+            },
+        }, firePoint.transform);
 
         return LowPolyKit.EndPrefabEdit(go, path, wasLoaded);
+    }
+
+    // Helmet visor, face, backpack, belt and shoulder pads that turn the plain block biped into a hero silhouette.
+    private static void AddHeroGear(CharacterFactory.BipedRig rig, CharacterFactory.BipedProportions p, CharacterFactory.BipedColors c)
+    {
+        Material gearMat = GetOrCreateMaterial("PlayerGear", new Color(0.26f, 0.3f, 0.2f), unlit: false);
+        Material strapMat = GetOrCreateMaterial("PlayerStrap", new Color(0.32f, 0.22f, 0.14f), unlit: false);
+        Material eyeMat = GetOrCreateMaterial("PlayerEyes", new Color(0.06f, 0.06f, 0.08f), unlit: true);
+        Material visorMat = GetOrCreateMaterial("PlayerVisor", new Color(0.5f, 1.4f, 2f), unlit: true);
+        Material padMat = GetOrCreateMaterial("PlayerHeadwear", c.headwear, unlit: false);
+
+        Transform torso = rig.torso;
+        float halfTorsoY = p.torsoSize.y * 0.5f;
+        float halfTorsoZ = p.torsoSize.z * 0.5f;
+        float headCenterY = halfTorsoY + p.headSize.y * 0.5f - 0.02f;
+        float headFrontZ = p.headSize.z * 0.5f;
+
+        LowPolyKit.CreateBlock("EyeL", torso, new Vector3(-0.08f, headCenterY + 0.01f, headFrontZ + 0.005f), Vector3.zero, new Vector3(0.06f, 0.07f, 0.02f), eyeMat);
+        LowPolyKit.CreateBlock("EyeR", torso, new Vector3(0.08f, headCenterY + 0.01f, headFrontZ + 0.005f), Vector3.zero, new Vector3(0.06f, 0.07f, 0.02f), eyeMat);
+        LowPolyKit.CreateBlock("Visor", torso, new Vector3(0f, headCenterY + p.headSize.y * 0.42f, headFrontZ + 0.03f), new Vector3(-12f, 0f, 0f), new Vector3(0.4f, 0.05f, 0.08f), visorMat);
+
+        LowPolyKit.CreateBlock("Backpack", torso, new Vector3(0f, 0.02f, -halfTorsoZ - 0.1f), Vector3.zero, new Vector3(0.44f, 0.48f, 0.2f), gearMat);
+        LowPolyKit.CreateBlock("Bedroll", torso, new Vector3(0f, 0.3f, -halfTorsoZ - 0.12f), new Vector3(0f, 0f, 90f), new Vector3(0.14f, 0.26f, 0.14f), strapMat, PrimitiveType.Cylinder);
+        LowPolyKit.CreateBlock("Strap", torso, new Vector3(0f, 0.04f, halfTorsoZ + 0.005f), new Vector3(0f, 0f, 40f), new Vector3(0.08f, 0.82f, 0.02f), strapMat);
+
+        LowPolyKit.CreateBlock("PadL", torso, new Vector3(-p.armSpacingX, p.armY + 0.06f, 0f), new Vector3(0f, 0f, 12f), new Vector3(0.28f, 0.12f, 0.3f), padMat);
+        LowPolyKit.CreateBlock("PadR", torso, new Vector3(p.armSpacingX, p.armY + 0.06f, 0f), new Vector3(0f, 0f, -12f), new Vector3(0.28f, 0.12f, 0.3f), padMat);
+
+        LowPolyKit.CreateBlock("Belt", rig.hips, new Vector3(0f, p.pelvisSize.y + 0.02f, 0f), Vector3.zero, new Vector3(p.pelvisSize.x + 0.06f, 0.09f, p.pelvisSize.z + 0.06f), strapMat);
+        LowPolyKit.CreateBlock("Pouch", rig.hips, new Vector3(0.2f, p.pelvisSize.y - 0.04f, p.pelvisSize.z * 0.5f + 0.05f), Vector3.zero, new Vector3(0.12f, 0.12f, 0.08f), gearMat);
+    }
+
+    // Built in place every run (unlike the sphere projectiles) so tweaks to its shape reach the existing prefab.
+    private static Projectile GetOrCreateArrowPrefab()
+    {
+        string path = $"{PrefabFolder}/ProjectileArrow.prefab";
+        GameObject go = LowPolyKit.BeginPrefabEdit(path, out bool wasLoaded);
+        LowPolyKit.ClearChildren(go);
+        go.name = "ProjectileArrow";
+
+        SphereCollider collider = LowPolyKit.GetOrAddComponent<SphereCollider>(go);
+        collider.isTrigger = true;
+        collider.radius = 0.25f;
+
+        Rigidbody rb = LowPolyKit.GetOrAddComponent<Rigidbody>(go);
+        rb.isKinematic = true;
+        rb.useGravity = false;
+
+        LowPolyKit.GetOrAddComponent<Projectile>(go);
+
+        Material shaftMat = GetOrCreateMaterial("ArrowShaft", new Color(0.62f, 0.42f, 0.22f), unlit: false);
+        // HDR so the head and fletching catch bloom like the other projectiles.
+        Material glowMat = GetOrCreateMaterial("ArrowGlow", new Color(2.4f, 2.2f, 1.5f), unlit: true);
+
+        LowPolyKit.CreateBlock("Shaft", go.transform, new Vector3(0f, 0f, -0.15f), new Vector3(90f, 0f, 0f), new Vector3(0.05f, 0.3f, 0.05f), shaftMat, PrimitiveType.Cylinder);
+        LowPolyKit.CreateBlock("Head", go.transform, new Vector3(0f, 0f, 0.18f), new Vector3(0f, 45f, 0f), new Vector3(0.12f, 0.06f, 0.12f), glowMat);
+        LowPolyKit.CreateBlock("Fletching", go.transform, new Vector3(0f, 0f, -0.42f), Vector3.zero, new Vector3(0.02f, 0.14f, 0.16f), glowMat);
+
+        return LowPolyKit.EndPrefabEdit(go, path, wasLoaded).GetComponent<Projectile>();
+    }
+
+    private static DogCompanion GetOrCreateDogPrefab()
+    {
+        string path = $"{PrefabFolder}/Dog.prefab";
+        GameObject go = LowPolyKit.BeginPrefabEdit(path, out bool wasLoaded);
+        LowPolyKit.ClearChildren(go);
+        LowPolyKit.RemoveOwnMesh(go);
+        go.name = "Dog";
+
+        Material furMat = GetOrCreateMaterial("DogFur", new Color(0.78f, 0.5f, 0.26f), unlit: false);
+        Material darkFurMat = GetOrCreateMaterial("DogFurDark", new Color(0.36f, 0.22f, 0.12f), unlit: false);
+        Material lightFurMat = GetOrCreateMaterial("DogFurLight", new Color(0.96f, 0.88f, 0.74f), unlit: false);
+        Material noseMat = GetOrCreateMaterial("DogNose", new Color(0.05f, 0.05f, 0.06f), unlit: true);
+        Material collarMat = GetOrCreateMaterial("DogCollar", new Color(0.3f, 0.85f, 1.4f), unlit: true);
+
+        GameObject bodyGo = new GameObject("Body");
+        bodyGo.transform.SetParent(go.transform, false);
+        bodyGo.transform.localPosition = new Vector3(0f, 0.55f, 0f);
+        Transform body = bodyGo.transform;
+
+        LowPolyKit.CreateBlock("Torso", body, Vector3.zero, Vector3.zero, new Vector3(0.42f, 0.36f, 0.8f), furMat);
+        LowPolyKit.CreateBlock("Belly", body, new Vector3(0f, -0.15f, 0.04f), Vector3.zero, new Vector3(0.36f, 0.08f, 0.6f), lightFurMat);
+        LowPolyKit.CreateBlock("Collar", body, new Vector3(0f, 0.15f, 0.36f), Vector3.zero, new Vector3(0.36f, 0.1f, 0.14f), collarMat);
+
+        GameObject headGo = new GameObject("Head");
+        headGo.transform.SetParent(body, false);
+        headGo.transform.localPosition = new Vector3(0f, 0.28f, 0.46f);
+        Transform head = headGo.transform;
+
+        LowPolyKit.CreateBlock("Skull", head, Vector3.zero, Vector3.zero, new Vector3(0.36f, 0.34f, 0.36f), furMat);
+        LowPolyKit.CreateBlock("Snout", head, new Vector3(0f, -0.06f, 0.24f), Vector3.zero, new Vector3(0.2f, 0.16f, 0.2f), lightFurMat);
+        LowPolyKit.CreateBlock("Nose", head, new Vector3(0f, -0.01f, 0.35f), Vector3.zero, new Vector3(0.09f, 0.07f, 0.04f), noseMat);
+        LowPolyKit.CreateBlock("EyeL", head, new Vector3(-0.09f, 0.06f, 0.181f), Vector3.zero, new Vector3(0.05f, 0.06f, 0.02f), noseMat);
+        LowPolyKit.CreateBlock("EyeR", head, new Vector3(0.09f, 0.06f, 0.181f), Vector3.zero, new Vector3(0.05f, 0.06f, 0.02f), noseMat);
+        LowPolyKit.CreateBlock("EarL", head, new Vector3(-0.15f, 0.12f, -0.04f), new Vector3(0f, 0f, 20f), new Vector3(0.08f, 0.2f, 0.14f), darkFurMat);
+        LowPolyKit.CreateBlock("EarR", head, new Vector3(0.15f, 0.12f, -0.04f), new Vector3(0f, 0f, -20f), new Vector3(0.08f, 0.2f, 0.14f), darkFurMat);
+
+        GameObject tailGo = new GameObject("Tail");
+        tailGo.transform.SetParent(body, false);
+        tailGo.transform.localPosition = new Vector3(0f, 0.12f, -0.38f);
+        tailGo.transform.localRotation = Quaternion.Euler(-35f, 0f, 0f);
+        LowPolyKit.CreateBlock("TailMesh", tailGo.transform, new Vector3(0f, 0.17f, 0f), Vector3.zero, new Vector3(0.08f, 0.34f, 0.08f), darkFurMat);
+
+        Vector3 legSize = new Vector3(0.12f, 0.42f, 0.12f);
+        string[] legNames = { "LegFL", "LegFR", "LegBL", "LegBR" };
+        Vector3[] legPositions =
+        {
+            new Vector3(-0.13f, -0.12f, 0.28f),
+            new Vector3(0.13f, -0.12f, 0.28f),
+            new Vector3(-0.13f, -0.12f, -0.28f),
+            new Vector3(0.13f, -0.12f, -0.28f),
+        };
+        var legs = new Transform[legNames.Length];
+        for (int i = 0; i < legs.Length; i++)
+        {
+            legs[i] = LowPolyKit.CreateHingeLimb(legNames[i], body, legPositions[i], legSize, furMat, out _);
+            LowPolyKit.CreateBlock("Paw", legs[i], new Vector3(0f, -legSize.y + 0.03f, 0.03f), Vector3.zero, new Vector3(0.14f, 0.06f, 0.18f), lightFurMat);
+        }
+
+        AddTeamRing(go.transform, 0.45f, PlayerRingColor);
+
+        DogCompanion dog = LowPolyKit.GetOrAddComponent<DogCompanion>(go);
+        dog.Configure(body, head, tailGo.transform, legs);
+
+        return LowPolyKit.EndPrefabEdit(go, path, wasLoaded).GetComponent<DogCompanion>();
+    }
+
+    private static Soldier GetOrCreateSoldierPrefab(Projectile bulletPrefab)
+    {
+        string path = $"{PrefabFolder}/Soldier.prefab";
+        GameObject go = LowPolyKit.BeginPrefabEdit(path, out bool wasLoaded);
+        LowPolyKit.ClearChildren(go);
+        LowPolyKit.RemoveOwnMesh(go);
+        go.name = "Soldier";
+        // A bit smaller than the hero so the leader stands out in the crowd.
+        go.transform.localScale = Vector3.one * 0.85f;
+
+        var colors = new CharacterFactory.BipedColors
+        {
+            uniform = new Color(0.36f, 0.55f, 0.82f),
+            skin = new Color(0.72f, 0.55f, 0.43f),
+            headwear = new Color(0.28f, 0.36f, 0.24f),
+            accent = new Color(0.3f, 0.85f, 1f),
+            weaponBody = new Color(0.25f, 0.24f, 0.22f),
+            weaponDark = new Color(0.1f, 0.1f, 0.1f),
+        };
+
+        CharacterFactory.BipedProportions proportions = CharacterFactory.PlayerProportions;
+        CharacterFactory.BipedRig rig = CharacterFactory.BuildBiped(go, proportions, colors, "Soldier");
+        rig.rifle.localScale = Vector3.one * 1.15f;
+        AddTeamRing(go.transform, 0.55f, PlayerRingColor);
+        CharacterFactory.BuildAnimations(go, rig, proportions, "Soldier",
+            CharacterFactory.WalkGait, CharacterFactory.RunGait, "Shoot",
+            10f, 3f, true, out AnimatorController controller);
+
+        Animator animator = LowPolyKit.GetOrAddComponent<Animator>(go);
+        animator.runtimeAnimatorController = controller;
+        animator.applyRootMotion = false;
+
+        GameObject firePoint = new GameObject("FirePoint");
+        firePoint.transform.SetParent(go.transform, false);
+        firePoint.transform.localPosition = go.transform.InverseTransformPoint(rig.muzzle.position);
+
+        Soldier soldier = LowPolyKit.GetOrAddComponent<Soldier>(go);
+        soldier.Configure(bulletPrefab, firePoint.transform);
+
+        return LowPolyKit.EndPrefabEdit(go, path, wasLoaded).GetComponent<Soldier>();
+    }
+
+    private static LootCache GetOrCreateLootCachePrefab()
+    {
+        string path = $"{PrefabFolder}/LootCache.prefab";
+        GameObject go = LowPolyKit.BeginPrefabEdit(path, out bool wasLoaded);
+        LowPolyKit.ClearChildren(go);
+        LowPolyKit.RemoveOwnMesh(go);
+        go.name = "LootCache";
+
+        Material woodMat = GetOrCreateMaterial("LootCrateWood", new Color(0.6f, 0.4f, 0.2f), unlit: false);
+        Material bandMat = GetOrCreateMaterial("LootCrateBand", new Color(0.25f, 0.22f, 0.2f), unlit: false);
+        Material goldMat = GetOrCreateMaterial("LootGlow", new Color(2.2f, 1.7f, 0.5f), unlit: true);
+
+        LowPolyKit.CreateBlock("Crate", go.transform, new Vector3(0f, 0.35f, 0f), Vector3.zero, new Vector3(0.9f, 0.7f, 0.65f), woodMat);
+        LowPolyKit.CreateBlock("Lid", go.transform, new Vector3(0f, 0.74f, 0f), Vector3.zero, new Vector3(0.96f, 0.1f, 0.7f), bandMat);
+        LowPolyKit.CreateBlock("BandL", go.transform, new Vector3(-0.3f, 0.35f, 0f), Vector3.zero, new Vector3(0.08f, 0.72f, 0.67f), bandMat);
+        LowPolyKit.CreateBlock("BandR", go.transform, new Vector3(0.3f, 0.35f, 0f), Vector3.zero, new Vector3(0.08f, 0.72f, 0.67f), bandMat);
+        LowPolyKit.CreateBlock("Gleam", go.transform, new Vector3(0f, 0.82f, 0f), new Vector3(0f, 45f, 0f), new Vector3(0.22f, 0.08f, 0.22f), goldMat);
+
+        // A tall thin light pillar so crates can be spotted from across the arena on a phone.
+        Transform beam = LowPolyKit.CreateBlock("Beam", go.transform, new Vector3(0f, 3f, 0f), Vector3.zero, new Vector3(0.16f, 3f, 0.16f), goldMat, PrimitiveType.Cylinder);
+        beam.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+
+        GameObject ringPivot = new GameObject("ProgressRing");
+        ringPivot.transform.SetParent(go.transform, false);
+        ringPivot.transform.localPosition = new Vector3(0f, 0.06f, 0f);
+        Transform disc = LowPolyKit.CreateBlock("Disc", ringPivot.transform, Vector3.zero, Vector3.zero, new Vector3(1f, 0.005f, 1f), goldMat, PrimitiveType.Cylinder);
+        disc.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+
+        LootCache cache = LowPolyKit.GetOrAddComponent<LootCache>(go);
+        cache.Configure(ringPivot.transform, beam);
+
+        return LowPolyKit.EndPrefabEdit(go, path, wasLoaded).GetComponent<LootCache>();
+    }
+
+    private static SquadCommander BuildSquad(Soldier soldierPrefab, Transform hero)
+    {
+        GameObject squadGo = FindOrCreateEmpty("Squad");
+        // The marker is saved hidden, which GameObject.Find can't see - so it lives under Squad and is cleared with it.
+        LowPolyKit.ClearChildren(squadGo);
+        GameObject rally = new GameObject("SquadRally");
+        rally.transform.SetParent(squadGo.transform, false);
+        Material poleMat = GetOrCreateMaterial("RallyPole", new Color(0.3f, 0.25f, 0.2f), unlit: false);
+        Material flagMat = GetOrCreateMaterial("RallyFlag", new Color(1f, 0.85f, 0.3f), unlit: true);
+        LowPolyKit.CreateBlock("Pole", rally.transform, new Vector3(0f, 0.9f, 0f), Vector3.zero, new Vector3(0.07f, 0.9f, 0.07f), poleMat, PrimitiveType.Cylinder);
+        LowPolyKit.CreateBlock("Flag", rally.transform, new Vector3(0.25f, 1.55f, 0f), Vector3.zero, new Vector3(0.45f, 0.3f, 0.03f), flagMat);
+        Transform ring = LowPolyKit.CreateBlock("Ring", rally.transform, new Vector3(0f, 0.05f, 0f), Vector3.zero, new Vector3(2.6f, 0.005f, 2.6f), flagMat, PrimitiveType.Cylinder);
+        ring.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+
+        SquadCommander squad = LowPolyKit.GetOrAddComponent<SquadCommander>(squadGo);
+        squad.Configure(soldierPrefab, hero, rally);
+        rally.SetActive(false);
+        EditorUtility.SetDirty(squad);
+        return squad;
+    }
+
+    // Square ring of wall blocks around the core, with a watchtower on each corner and a double
+    // gate in the middle of the south side (the side the hero starts on).
+    private static void BuildBaseWalls(Wall wallPrefab, Gate gatePrefab, Watchtower towerPrefab, PlacementGrid grid, Transform hero)
+    {
+        DestroyIfExists("BaseWalls");
+        Transform parent = new GameObject("BaseWalls").transform;
+
+        // The core sits on a grid line between four cells, so the ring is centred on that corner.
+        Vector2Int coreCell = grid.WorldToCell(Vector3.zero);
+        int min = coreCell.x - BaseWallRingCells;
+        int max = coreCell.x + BaseWallRingCells - 1;
+
+        GameObject Place(GameObject prefab, Vector3 position)
+        {
+            var go = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+            go.transform.SetParent(parent, false);
+            go.transform.position = position;
+            SetPrivateField(go.GetComponent<Wall>(), "grid", grid);
+            return go;
+        }
+
+        for (int x = min; x <= max; x++)
+        {
+            for (int z = min; z <= max; z++)
+            {
+                bool onRing = x == min || x == max || z == min || z == max;
+                if (!onRing) continue;
+
+                bool corner = (x == min || x == max) && (z == min || z == max);
+                // The gate is two cells wide, straddling the core's column on the south side.
+                bool gateCell = z == min && (x == coreCell.x - 1 || x == coreCell.x);
+                if (gateCell) continue;
+
+                Place(corner ? towerPrefab.gameObject : wallPrefab.gameObject, grid.CellToWorldCenter(new Vector2Int(x, z)));
+            }
+        }
+
+        Vector3 gatePosition = (grid.CellToWorldCenter(new Vector2Int(coreCell.x - 1, min)) + grid.CellToWorldCenter(new Vector2Int(coreCell.x, min))) * 0.5f;
+        GameObject gate = Place(gatePrefab.gameObject, gatePosition);
+        SetPrivateField(gate.GetComponent<Gate>(), "hero", hero);
+    }
+
+    private static Gate GetOrCreateGatePrefab()
+    {
+        string path = $"{PrefabFolder}/Gate.prefab";
+        GameObject go = LowPolyKit.BeginPrefabEdit(path, out bool wasLoaded);
+        LowPolyKit.ClearChildren(go);
+        LowPolyKit.RemoveOwnMesh(go);
+        go.name = "Gate";
+
+        Material stoneMat = GetOrCreateMaterial("WallStone", new Color(0.62f, 0.58f, 0.52f), unlit: false);
+        Material darkStoneMat = GetOrCreateMaterial("WallStoneDark", new Color(0.42f, 0.39f, 0.36f), unlit: false);
+        Material woodMat = GetOrCreateMaterial("GateWood", new Color(0.5f, 0.33f, 0.17f), unlit: false);
+        Material ironMat = GetOrCreateMaterial("GateIron", new Color(0.2f, 0.2f, 0.22f), unlit: false);
+
+        // Pillars flush with the neighbouring wall blocks (which end 3m either side of centre).
+        LowPolyKit.CreateBlock("PillarL", go.transform, new Vector3(-2.75f, 1.3f, 0f), Vector3.zero, new Vector3(0.6f, 2.6f, 1.6f), stoneMat);
+        LowPolyKit.CreateBlock("PillarR", go.transform, new Vector3(2.75f, 1.3f, 0f), Vector3.zero, new Vector3(0.6f, 2.6f, 1.6f), stoneMat);
+        LowPolyKit.CreateBlock("CapL", go.transform, new Vector3(-2.75f, 2.7f, 0f), Vector3.zero, new Vector3(0.8f, 0.3f, 1.8f), darkStoneMat);
+        LowPolyKit.CreateBlock("CapR", go.transform, new Vector3(2.75f, 2.7f, 0f), Vector3.zero, new Vector3(0.8f, 0.3f, 1.8f), darkStoneMat);
+        LowPolyKit.CreateBlock("Lintel", go.transform, new Vector3(0f, 2.45f, 0f), Vector3.zero, new Vector3(5.2f, 0.3f, 0.5f), woodMat);
+
+        Transform BuildDoor(string name, float hingeX, float side)
+        {
+            GameObject hinge = new GameObject(name);
+            hinge.transform.SetParent(go.transform, false);
+            hinge.transform.localPosition = new Vector3(hingeX, 0f, 0f);
+            LowPolyKit.CreateBlock("Leaf", hinge.transform, new Vector3(side * 1.22f, 1.05f, 0f), Vector3.zero, new Vector3(2.45f, 1.9f, 0.16f), woodMat);
+            LowPolyKit.CreateBlock("BandTop", hinge.transform, new Vector3(side * 1.22f, 1.6f, -0.1f), Vector3.zero, new Vector3(2.45f, 0.14f, 0.05f), ironMat);
+            LowPolyKit.CreateBlock("BandLow", hinge.transform, new Vector3(side * 1.22f, 0.5f, -0.1f), Vector3.zero, new Vector3(2.45f, 0.14f, 0.05f), ironMat);
+            return hinge.transform;
+        }
+
+        Transform leftDoor = BuildDoor("DoorL", -2.45f, 1f);
+        Transform rightDoor = BuildDoor("DoorR", 2.45f, -1f);
+
+        LowPolyKit.GetOrAddComponent<Health>(go).Configure(500f);
+        LowPolyKit.GetOrAddComponent<HitFlash>(go);
+        Wall wall = LowPolyKit.GetOrAddComponent<Wall>(go);
+        wall.SetFootprint(new Vector2(3f, 0.8f));
+        LowPolyKit.GetOrAddComponent<Gate>(go).Configure(leftDoor, rightDoor);
+
+        return LowPolyKit.EndPrefabEdit(go, path, wasLoaded).GetComponent<Gate>();
+    }
+
+    private static Watchtower GetOrCreateWatchtowerPrefab(Soldier guardPrefab)
+    {
+        string path = $"{PrefabFolder}/Watchtower.prefab";
+        GameObject go = LowPolyKit.BeginPrefabEdit(path, out bool wasLoaded);
+        LowPolyKit.ClearChildren(go);
+        LowPolyKit.RemoveOwnMesh(go);
+        go.name = "Watchtower";
+
+        Material stoneMat = GetOrCreateMaterial("WallStone", new Color(0.62f, 0.58f, 0.52f), unlit: false);
+        Material darkStoneMat = GetOrCreateMaterial("WallStoneDark", new Color(0.42f, 0.39f, 0.36f), unlit: false);
+        Material woodMat = GetOrCreateMaterial("WallWood", new Color(0.5f, 0.34f, 0.18f), unlit: false);
+        Material bannerMat = GetOrCreateMaterial("WatchtowerBanner", new Color(0.3f, 0.75f, 1.4f), unlit: true);
+
+        const float platformY = 3.5f;
+        LowPolyKit.CreateBlock("Footing", go.transform, new Vector3(0f, 0.15f, 0f), Vector3.zero, new Vector3(2.95f, 0.3f, 2.95f), darkStoneMat);
+        LowPolyKit.CreateBlock("Shaft", go.transform, new Vector3(0f, 1.8f, 0f), Vector3.zero, new Vector3(2.3f, 3.1f, 2.3f), stoneMat);
+        LowPolyKit.CreateBlock("Platform", go.transform, new Vector3(0f, platformY, 0f), Vector3.zero, new Vector3(3.1f, 0.25f, 3.1f), woodMat);
+
+        // Low rails and corner merlons keep the guard visible from the overhead camera.
+        for (int i = 0; i < 4; i++)
+        {
+            Quaternion rot = Quaternion.Euler(0f, i * 90f, 0f);
+            LowPolyKit.CreateBlock("Rail", go.transform, rot * new Vector3(0f, platformY + 0.3f, 1.45f) , new Vector3(0f, i * 90f, 0f), new Vector3(2.9f, 0.35f, 0.14f), darkStoneMat);
+            LowPolyKit.CreateBlock("Merlon", go.transform, rot * new Vector3(1.35f, platformY + 0.45f, 1.35f), Vector3.zero, new Vector3(0.45f, 0.65f, 0.45f), stoneMat);
+        }
+        LowPolyKit.CreateBlock("Pole", go.transform, new Vector3(1.3f, platformY + 1.2f, -1.3f), Vector3.zero, new Vector3(0.07f, 1.1f, 0.07f), woodMat, PrimitiveType.Cylinder);
+        LowPolyKit.CreateBlock("Banner", go.transform, new Vector3(1.6f, platformY + 1.95f, -1.3f), Vector3.zero, new Vector3(0.55f, 0.35f, 0.04f), bannerMat);
+
+        GameObject post = new GameObject("GuardPost");
+        post.transform.SetParent(go.transform, false);
+        post.transform.localPosition = new Vector3(0f, platformY + 0.13f, 0f);
+
+        LowPolyKit.GetOrAddComponent<Health>(go).Configure(700f);
+        LowPolyKit.GetOrAddComponent<HitFlash>(go);
+        LowPolyKit.GetOrAddComponent<Wall>(go);
+        LowPolyKit.GetOrAddComponent<Watchtower>(go).Configure(guardPrefab, post.transform);
+
+        return LowPolyKit.EndPrefabEdit(go, path, wasLoaded).GetComponent<Watchtower>();
     }
 
     private static GameObject GetOrCreateCorePrefab()
@@ -1101,8 +1488,6 @@ public static class ProjectSetup
         Material grassMat = GetOrCreateMaterial("ArenaGrass", new Color(0.44f, 0.66f, 0.3f), unlit: false);
         Material plazaMat = GetOrCreateMaterial("ArenaPlaza", new Color(0.88f, 0.78f, 0.56f), unlit: false);
         Material pathMat = GetOrCreateMaterial("ArenaPath", new Color(0.68f, 0.53f, 0.34f), unlit: false);
-        Material portalRimMat = GetOrCreateMaterial("SpawnPortalRim", new Color(0.2f, 0.17f, 0.2f), unlit: false);
-        Material portalGlowMat = GetOrCreateMaterial("SpawnPortalGlow", new Color(2.6f, 0.4f, 0.25f), unlit: true);
 
         GameObject ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
         ground.name = "Ground";
@@ -1113,15 +1498,15 @@ public static class ProjectSetup
         // Floor layers are stacked a few cm apart (path < plaza < portal) to avoid z-fighting.
         CreateFloorPiece("Plaza", PrimitiveType.Cylinder, arena, new Vector3(0f, 0.02f, 0f), Quaternion.identity, new Vector3(11f, 0.02f, 11f), plazaMat);
 
-        foreach (Vector3 spawn in SpawnPositions)
+        // Churned-up dirt patches scattered through the treeline hint at where the dead crawl out.
+        Random.InitState(4321);
+        for (int i = 0; i < 18; i++)
         {
-            Vector3 dir = spawn.normalized;
-            const float pathStart = 4f;
-            float length = spawn.magnitude - pathStart;
-            Vector3 center = dir * (pathStart + length * 0.5f);
-            CreateFloorPiece("Path", PrimitiveType.Cube, arena, center + Vector3.up * 0.01f, Quaternion.LookRotation(dir), new Vector3(2.8f, 0.02f, length + 1f), pathMat);
-            CreateFloorPiece("PortalRim", PrimitiveType.Cylinder, arena, spawn + Vector3.up * 0.03f, Quaternion.identity, new Vector3(3.6f, 0.03f, 3.6f), portalRimMat);
-            CreateFloorPiece("PortalGlow", PrimitiveType.Cylinder, arena, spawn + Vector3.up * 0.04f, Quaternion.identity, new Vector3(2.7f, 0.04f, 2.7f), portalGlowMat);
+            float angle = i * 20f + Random.Range(-8f, 8f);
+            float radius = Random.Range(27f, 32f);
+            Vector3 pos = Quaternion.Euler(0f, angle, 0f) * Vector3.forward * radius;
+            float size = Random.Range(1.6f, 2.8f);
+            CreateFloorPiece("DirtPatch", PrimitiveType.Cylinder, arena, pos + Vector3.up * 0.015f, Quaternion.Euler(0f, Random.Range(0f, 360f), 0f), new Vector3(size, 0.02f, size * 0.7f), pathMat);
         }
 
         BuildDecorRing(arena);
@@ -1142,10 +1527,6 @@ public static class ProjectSetup
         {
             float angle = i * (360f / propCount) + Random.Range(-3f, 3f);
             float radius = Random.Range(26f, 40f);
-
-            // Keep the diagonal spawn lanes clear so portals and paths stay readable.
-            float fromLane = Mathf.Abs(Mathf.DeltaAngle(angle, Mathf.Round((angle - 45f) / 90f) * 90f + 45f));
-            if (fromLane < 9f && radius < 34f) radius += 8f;
 
             Vector3 localPos = new Vector3(Mathf.Cos(angle * Mathf.Deg2Rad), 0f, Mathf.Sin(angle * Mathf.Deg2Rad)) * radius;
             float scale = Random.Range(0.85f, 1.5f);
@@ -1355,7 +1736,7 @@ public static class ProjectSetup
         return go.transform;
     }
 
-    private static void BuildGameplayUI(EnemySpawner spawner, Health coreHealth, TowerPlacer placer)
+    private static void BuildGameplayUI(EnemySpawner spawner, Health coreHealth, TowerPlacer placer, PlayerShooter shooter, DogCompanion dogPrefab, SquadCommander squad)
     {
         // Rebuilt from scratch so stale elements from older layouts never linger.
         DestroyIfExists("UICanvas");
@@ -1370,6 +1751,8 @@ public static class ProjectSetup
         BuildHud(canvas, safeArea, spawner, coreHealth);
         BuildTowerShop(safeArea, placer);
         spawner.SetUpgradeDraft(BuildUpgradeDraft(canvas));
+        BuildSquadHud(safeArea, squad, shooter != null ? shooter.transform : null);
+        BuildHeroShop(canvas, safeArea, shooter, dogPrefab, placer, squad);
         EditorUtility.SetDirty(spawner);
     }
 
@@ -1416,6 +1799,23 @@ public static class ProjectSetup
         Image coinImage = AddImage(coin, ScrapGold, CircleSprite);
         Text scrapText = CreateText(scrapPill, "ScrapText", "0", 44, ScrapGold, TextAnchor.MiddleLeft, midLeft, new Vector2(76f, 0f), new Vector2(150f, 64f));
         scrapText.fontStyle = FontStyle.Bold;
+
+        // Hero HP sits right under the scrap counter; the respawn countdown is centred on screen.
+        RectTransform heroBar = CreateRect("HeroHpBar", safeArea, topLeft, topLeft, topLeft, new Vector2(24f, -116f), new Vector2(230f, 40f));
+        AddImage(heroBar, PanelColor, RoundedSprite);
+        RectTransform heroFill = CreateRect("Fill", heroBar, Vector2.zero, Vector2.one, new Vector2(0f, 0.5f), Vector2.zero, Vector2.zero);
+        heroFill.offsetMin = new Vector2(5f, 5f);
+        heroFill.offsetMax = new Vector2(-5f, -5f);
+        AddImage(heroFill, new Color(0.35f, 0.9f, 0.4f), RoundedSprite);
+        Text heroHpText = CreateFillText(heroBar, "HeroHpText", 24, Color.white, TextAnchor.MiddleCenter);
+        heroHpText.fontStyle = FontStyle.Bold;
+        AddTextShadow(heroHpText);
+
+        Text respawnText = CreateText(safeArea, "RespawnText", "", 64, new Color(1f, 0.4f, 0.35f), TextAnchor.MiddleCenter, new Vector2(0.5f, 0.5f), new Vector2(0f, 200f), new Vector2(1000f, 200f));
+        respawnText.fontStyle = FontStyle.Bold;
+        AddTextShadow(respawnText);
+        respawnText.gameObject.SetActive(false);
+        heroBar.gameObject.AddComponent<HeroHealthBar>().Configure(heroFill, heroHpText, respawnText);
 
         // Game over sits on the canvas (not the safe area) so its dimmer covers the whole screen.
         RectTransform gameOverPanel = CreateRect("GameOverPanel", canvas, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero);
@@ -1464,6 +1864,96 @@ public static class ProjectSetup
 
         TowerShopUI shopUi = row.gameObject.AddComponent<TowerShopUI>();
         shopUi.Configure(placer, buttonViews, hintText.gameObject);
+    }
+
+    private static void BuildHeroShop(Transform canvas, RectTransform safeArea, PlayerShooter shooter, DogCompanion dogPrefab, TowerPlacer placer, SquadCommander squad)
+    {
+        Vector2 topRight = new Vector2(1f, 1f);
+        Button openButton = CreateMenuButton(safeArea, "ShopButton", "SHOP", topRight, new Vector2(-24f, -24f), new Vector2(200f, 80f), new Color(1f, 0.62f, 0.2f), 40);
+
+        Vector2 center = new Vector2(0.5f, 0.5f);
+        RectTransform overlay = CreateRect("HeroShopPanel", canvas, Vector2.zero, Vector2.one, center, Vector2.zero, Vector2.zero);
+        AddImage(overlay, new Color(0.02f, 0.03f, 0.05f, 0.85f), raycast: true);
+
+        Text header = CreateText(overlay, "HeaderText", "SHOP", 76, ScrapGold, TextAnchor.MiddleCenter, center, new Vector2(0f, 640f), new Vector2(1040f, 100f));
+        header.fontStyle = FontStyle.Bold;
+        AddTextShadow(header);
+
+        RectTransform scrapPill = CreateRect("ShopScrapPill", overlay, center, center, center, new Vector2(0f, 535f), new Vector2(260f, 76f));
+        AddImage(scrapPill, PanelColor, RoundedSprite);
+        Vector2 midLeft = new Vector2(0f, 0.5f);
+        RectTransform coin = CreateRect("CoinIcon", scrapPill, midLeft, midLeft, midLeft, new Vector2(18f, 0f), new Vector2(46f, 46f));
+        AddImage(coin, ScrapGold, CircleSprite);
+        Text scrapText = CreateText(scrapPill, "ScrapText", "0", 42, ScrapGold, TextAnchor.MiddleLeft, midLeft, new Vector2(78f, 0f), new Vector2(170f, 64f));
+        scrapText.fontStyle = FontStyle.Bold;
+
+        var views = new ShopItemView[3];
+        for (int i = 0; i < views.Length; i++)
+        {
+            views[i] = CreateShopItemCard(overlay, i, new Vector2(0f, 300f - i * 280f));
+        }
+
+        Button closeButton = CreateMenuButton(overlay, "CloseButton", "BACK", center, new Vector2(0f, -540f), new Vector2(520f, 120f), new Color(0.85f, 0.87f, 0.9f));
+
+        // Lives on the always-visible button: a script on the hidden panel would never wake up to wire the button.
+        HeroShopUI shop = openButton.gameObject.AddComponent<HeroShopUI>();
+        shop.Configure(openButton, overlay.gameObject, closeButton, scrapText, views, shooter, dogPrefab, placer, squad);
+    }
+
+    private static void BuildSquadHud(RectTransform safeArea, SquadCommander squad, Transform hero)
+    {
+        Vector2 bottomRight = new Vector2(1f, 0f);
+        Vector2 bottomCenter = new Vector2(0.5f, 0f);
+
+        Button squadButton = CreateMenuButton(safeArea, "SquadButton", "SQUAD", bottomRight, new Vector2(-24f, 330f), new Vector2(290f, 100f), new Color(0.35f, 0.6f, 0.95f), 38);
+
+        Text hint = CreateText(safeArea, "SquadHint", "Tap the map to send your squad", 38, new Color(1f, 0.92f, 0.4f), TextAnchor.MiddleCenter, bottomCenter, new Vector2(0f, 600f), new Vector2(1040f, 56f));
+        AddTextShadow(hint);
+
+        Button hireButton = CreateMenuButton(safeArea, "HireGuardButton", "HIRE GUARD", bottomCenter, new Vector2(0f, 460f), new Vector2(560f, 110f), new Color(0.3f, 0.82f, 0.4f), 40);
+
+        SquadHUD hud = safeArea.gameObject.AddComponent<SquadHUD>();
+        hud.Configure(squad, squadButton, squadButton.GetComponentInChildren<Text>(), hint.gameObject,
+            hero, hireButton, hireButton.GetComponentInChildren<Text>());
+        squadButton.gameObject.SetActive(false);
+        hireButton.gameObject.SetActive(false);
+        hint.gameObject.SetActive(false);
+    }
+
+    private static ShopItemView CreateShopItemCard(Transform parent, int index, Vector2 position)
+    {
+        Vector2 center = new Vector2(0.5f, 0.5f);
+        RectTransform card = CreateRect($"ShopItem_{index}", parent, center, center, center, position, new Vector2(960f, 250f));
+        Image background = AddImage(card, new Color(0.12f, 0.13f, 0.17f, 0.98f), RoundedSprite, raycast: true);
+
+        Vector2 midLeft = new Vector2(0f, 0.5f);
+        RectTransform icon = CreateRect("Icon", card, midLeft, midLeft, midLeft, new Vector2(30f, 0f), new Vector2(170f, 170f));
+        Image iconImage = AddImage(icon, Color.white, RoundedSprite);
+        Text iconLetter = CreateFillText(icon, "IconLetter", 80, new Color(0f, 0f, 0f, 0.6f), TextAnchor.MiddleCenter);
+        iconLetter.fontStyle = FontStyle.Bold;
+
+        Vector2 topLeft = new Vector2(0f, 1f);
+        Text title = CreateText(card, "Title", "", 46, Color.white, TextAnchor.UpperLeft, topLeft, new Vector2(225f, -30f), new Vector2(480f, 60f));
+        title.fontStyle = FontStyle.Bold;
+
+        Text description = CreateText(card, "Description", "", 30, new Color(0.82f, 0.85f, 0.9f), TextAnchor.UpperLeft, topLeft, new Vector2(225f, -100f), new Vector2(460f, 130f));
+        description.horizontalOverflow = HorizontalWrapMode.Wrap;
+
+        Vector2 midRight = new Vector2(1f, 0.5f);
+        Button buyButton = CreateMenuButton(card, "BuyButton", "", midRight, new Vector2(-30f, 0f), new Vector2(230f, 120f), new Color(0.3f, 0.82f, 0.4f), 40);
+
+        return new ShopItemView
+        {
+            Root = card,
+            Button = buyButton,
+            Background = background,
+            Icon = iconImage,
+            IconLetter = iconLetter,
+            Title = title,
+            Description = description,
+            ButtonLabel = buyButton.GetComponentInChildren<Text>(),
+            ButtonImage = buyButton.GetComponent<Image>(),
+        };
     }
 
     private static UpgradeDraft BuildUpgradeDraft(Transform canvas)
@@ -1530,14 +2020,14 @@ public static class ProjectSetup
 
     private static TowerShopButtonView CreateTowerCard(Transform parent, int index, TowerDefinition def)
     {
-        RectTransform card = CreateRect($"TowerCard_{index}", parent, Vector2.zero, Vector2.zero, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(196f, 250f));
+        RectTransform card = CreateRect($"TowerCard_{index}", parent, Vector2.zero, Vector2.zero, new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(162f, 240f));
         Image background = AddImage(card, new Color(0.1f, 0.11f, 0.14f, 0.92f), RoundedSprite, raycast: true);
         Button button = card.gameObject.AddComponent<Button>();
         button.transition = Selectable.Transition.None;
         button.targetGraphic = background;
 
         Vector2 topCenter = new Vector2(0.5f, 1f);
-        RectTransform icon = CreateRect("Icon", card, topCenter, topCenter, topCenter, new Vector2(0f, -16f), new Vector2(124f, 124f));
+        RectTransform icon = CreateRect("Icon", card, topCenter, topCenter, topCenter, new Vector2(0f, -14f), new Vector2(112f, 112f));
         Image iconImage = AddImage(icon, def.accentColor, RoundedSprite);
         string initial = string.IsNullOrEmpty(def.displayName) ? "?" : def.displayName.Substring(0, 1).ToUpperInvariant();
         Text initialText = CreateFillText(icon, "Initial", 72, new Color(0f, 0f, 0f, 0.55f), TextAnchor.MiddleCenter);
@@ -1545,7 +2035,7 @@ public static class ProjectSetup
         initialText.fontStyle = FontStyle.Bold;
 
         Vector2 bottomCenter = new Vector2(0.5f, 0f);
-        Text label = CreateText(card, "Label", def.displayName, 28, Color.white, TextAnchor.MiddleCenter, bottomCenter, new Vector2(0f, 62f), new Vector2(190f, 40f));
+        Text label = CreateText(card, "Label", def.displayName, 28, Color.white, TextAnchor.MiddleCenter, bottomCenter, new Vector2(0f, 62f), new Vector2(158f, 40f));
         label.fontStyle = FontStyle.Bold;
 
         RectTransform coin = CreateRect("CoinIcon", card, bottomCenter, bottomCenter, bottomCenter, new Vector2(-34f, 20f), new Vector2(30f, 30f));

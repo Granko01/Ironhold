@@ -43,7 +43,11 @@ public class PlacementGrid : MonoBehaviour
 
     public void Free(Vector2Int cell) => occupiedCells.Remove(cell);
 
-    public void OccupyWorldArea(Vector3 worldCenter, Vector3 size)
+    public void FreeWorldArea(Vector3 worldCenter, Vector3 size) => ForEachCellInArea(worldCenter, size, Free);
+
+    public void OccupyWorldArea(Vector3 worldCenter, Vector3 size) => ForEachCellInArea(worldCenter, size, Occupy);
+
+    private void ForEachCellInArea(Vector3 worldCenter, Vector3 size, System.Action<Vector2Int> action)
     {
         Vector2Int minCell = WorldToCell(worldCenter - new Vector3(size.x, 0f, size.z) * 0.5f);
         Vector2Int maxCell = WorldToCell(worldCenter + new Vector3(size.x, 0f, size.z) * 0.5f);
@@ -52,7 +56,7 @@ public class PlacementGrid : MonoBehaviour
         {
             for (int z = minCell.y; z <= maxCell.y; z++)
             {
-                Occupy(new Vector2Int(x, z));
+                action(new Vector2Int(x, z));
             }
         }
     }

@@ -9,6 +9,9 @@ public class Health : MonoBehaviour
     public float CurrentHealth { get; private set; }
     public event Action Died;
     public event Action<float> Damaged;
+    public event Action Revived;
+
+    public bool IsDead => CurrentHealth <= 0f;
 
     private void Awake()
     {
@@ -25,6 +28,13 @@ public class Health : MonoBehaviour
     {
         if (CurrentHealth <= 0f) return;
         CurrentHealth = Mathf.Min(maxHealth, CurrentHealth + amount);
+    }
+
+    // Brings a dead (or hurt) character back at full health, e.g. the hero respawning.
+    public void Revive()
+    {
+        CurrentHealth = maxHealth;
+        Revived?.Invoke();
     }
 
     public void IncreaseMax(float amount)
