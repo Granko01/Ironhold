@@ -118,8 +118,10 @@ public class SquadCommander : MonoBehaviour
     {
         for (int i = 0; i < soldiers.Count; i++)
         {
+            // Holding a spot, every other soldier takes a knee - a staggered firing line.
             if (State == SquadState.Deployed) soldiers[i].HoldPosition(rallyPoint + FormationOffset(i, 1.1f));
             else soldiers[i].Follow(hero, FormationOffset(i, 2f));
+            soldiers[i].SetKneeling(State == SquadState.Deployed && i % 2 == 0);
         }
     }
 

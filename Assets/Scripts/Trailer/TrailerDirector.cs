@@ -592,10 +592,12 @@ public class TrailerDirector : MonoBehaviour
     private void SpawnDefenders()
     {
         if (soldierPrefab == null) return;
-        foreach (Vector3 post in DefenderLine)
+        for (int i = 0; i < DefenderLine.Length; i++)
         {
-            Soldier soldier = Instantiate(soldierPrefab, post, Quaternion.Euler(0f, 180f, 0f));
-            soldier.HoldPosition(post);
+            Soldier soldier = Instantiate(soldierPrefab, DefenderLine[i], Quaternion.Euler(0f, 180f, 0f));
+            soldier.HoldPosition(DefenderLine[i]);
+            // Alternating kneel/stand, like a real firing line.
+            soldier.SetKneeling(i % 2 == 0);
         }
         // The soldier who gets ambushed stands guard just inside the breach.
         victim = Instantiate(soldierPrefab, BreachPoint + new Vector3(0f, 0f, 4f), Quaternion.Euler(0f, 180f, 0f));

@@ -229,8 +229,99 @@ public class Enemy : MonoBehaviour
         if (deathShake > 0f) IsoCameraFollow.AddTrauma(deathShake);
 
         GameManager.Instance?.AddScrap(Mathf.RoundToInt(scrapReward * RunModifiers.ScrapMultiplier), center);
-        if (animator != null) animator.SetTrigger(DeathParam);
-        Despawn(1f);
+
+        // Varied deaths for regular-sized enemies: the stock forward collapse, being blown off
+        // their feet, or spinning round and crumpling. Scripted enemies (component disabled, e.g.
+        // in the trailer) and the boss keep the stock animation so scenes stay in control.
+        int style = enabled && height < 3f ? UnityEngine.Random.Range(0, 3) : 0;
+        if (style == 0)
+        {
+            if (animator != null) animator.SetTrigger(DeathParam);
+        }
+        else
+        {
+            StartCoroutine(FallOver(backward: style == 1));
+        }
+        StartCoroutine(SinkAway());
+        Despawn(CorpseSeconds);
+    }
+
+    private const float CorpseSeconds = 2.2f;
+
+    private System.Collections.IEnumerator FallOver(bool backward)
+    {
+        if (animator != null) animator.enabled = false;
+        Transform armL = FindPart("ArmL");
+        Transform armR = FindPart("ArmR");
+        Transform kneeL = FindPart("LegL_Knee");
+        Transform kneeR = FindPart("LegR_Knee");
+
+        float side = UnityEngine.Random.value < 0.5f ? -1f : 1f;
+        Vector3 startPos = transform.position;
+        Quaternion startRot = transform.rotation;
+        Vector3 endPos;
+        Quaternion endRot;
+        Quaternion armLEnd;
+        Quaternion armREnd;
+        float kneeBend;
+        float duration;
+
+        if (backward)
+        {
+            // Thrown onto their back, arms flung over their head.
+            endRot = startRot * Quaternion.Euler(-88f, 0f, 0f);
+            endPos = startPos - transform.forward * 1.1f + Vector3.up * 0.12f;
+            armLEnd = Quaternion.Euler(-165f, 0f, -30f);
+            armREnd = Quaternion.Euler(-160f, 0f, 30f);
+            kneeBend = 25f;
+            duration = 0.42f;
+        }
+        else
+        {
+            // Twisted round by the hit, folding over sideways with the knees buckling.
+            endRot = startRot * Quaternion.Euler(0f, 150f * side, 0f) * Quaternion.Euler(0f, 0f, 82f * side);
+            endPos = startPos + transform.right * side * 0.5f + Vector3.up * 0.1f;
+            armLEnd = Quaternion.Euler(-40f, 0f, -70f);
+            armREnd = Quaternion.Euler(-70f, 0f, 60f);
+            kneeBend = 70f;
+            duration = 0.55f;
+        }
+
+        Quaternion armLStart = armL != null ? armL.localRotation : Quaternion.identity;
+        Quaternion armRStart = armR != null ? armR.localRotation : Quaternion.identity;
+        for (float t = 0f; t < duration; t += Time.deltaTime)
+        {
+            float k = t / duration;
+            float fall = k * k; // accelerates like gravity
+            float hop = backward ? Mathf.Sin(k * Mathf.PI) * 0.3f : 0f;
+            transform.SetPositionAndRotation(Vector3.Lerp(startPos, endPos, k) + Vector3.up * hop, Quaternion.Slerp(startRot, endRot, fall));
+            if (armL != null) armL.localRotation = Quaternion.Slerp(armLStart, armLEnd, k);
+            if (armR != null) armR.localRotation = Quaternion.Slerp(armRStart, armREnd, k);
+            if (kneeL != null) kneeL.localRotation = Quaternion.Euler(kneeBend * k, 0f, 0f);
+            if (kneeR != null) kneeR.localRotation = Quaternion.Euler(kneeBend * 0.7f * k, 0f, 0f);
+            yield return null;
+        }
+        transform.SetPositionAndRotation(endPos, endRot);
+    }
+
+    // The body lies a moment, then settles into the ground instead of vanishing.
+    private System.Collections.IEnumerator SinkAway()
+    {
+        yield return new WaitForSeconds(CorpseSeconds - 0.6f);
+        for (float t = 0f; t < 0.6f; t += Time.deltaTime)
+        {
+            transform.position += Vector3.down * (0.75f * Time.deltaTime);
+            yield return null;
+        }
+    }
+
+    private Transform FindPart(string partName)
+    {
+        foreach (Transform t in GetComponentsInChildren<Transform>())
+        {
+            if (t.name == partName) return t;
+        }
+        return null;
     }
 
     private void Despawn(float delay)

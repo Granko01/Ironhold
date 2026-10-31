@@ -28,6 +28,26 @@ public class Soldier : MonoBehaviour
     private Vector3 post;
     private Enemy target;
     private float cooldownTimer;
+    private int shotsLeftInBurst;
+    private bool moving;
+
+    // Kneeling: when holding a post, a soldier can drop to one knee. Applied after the Animator
+    // each frame (it would otherwise put the legs back), blended in so it doesn't snap.
+    private bool kneeling;
+    private float kneelBlend;
+    private Transform hips;
+    private Transform legL;
+    private Transform legR;
+    private Transform kneeL;
+    private Transform kneeR;
+    private float hipsRestY;
+    private Vector3 firePointRest;
+
+    private static readonly Quaternion KneelLegL = Quaternion.Euler(-85f, 0f, 0f);
+    private static readonly Quaternion KneelKneeL = Quaternion.Euler(85f, 0f, 0f);
+    private static readonly Quaternion KneelLegR = Quaternion.Euler(8f, 0f, 0f);
+    private static readonly Quaternion KneelKneeR = Quaternion.Euler(95f, 0f, 0f);
+    private const float KneelHipsFactor = 0.57f;
 
     public void Configure(Projectile projectile, Transform firePointTransform)
     {
@@ -45,7 +65,30 @@ public class Soldier : MonoBehaviour
     {
         if (animator == null) animator = GetComponentInChildren<Animator>();
         post = transform.position;
+
+        hips = FindPart("Hips");
+        legL = FindPart("LegL");
+        legR = FindPart("LegR");
+        kneeL = FindPart("LegL_Knee");
+        kneeR = FindPart("LegR_Knee");
+        if (hips != null) hipsRestY = hips.localPosition.y;
+        if (firePoint != null) firePointRest = firePoint.localPosition;
+
+        // Out of step with every other soldier from the first shot.
+        cooldownTimer = Random.Range(0f, 0.8f);
+        shotsLeftInBurst = Random.Range(2, 5);
     }
+
+    private Transform FindPart(string partName)
+    {
+        foreach (Transform t in GetComponentsInChildren<Transform>())
+        {
+            if (t.name == partName) return t;
+        }
+        return null;
+    }
+
+    public void SetKneeling(bool kneel) => kneeling = kneel;
 
     public void SetRange(float value) => range = value;
 
@@ -78,6 +121,7 @@ public class Soldier : MonoBehaviour
             transform.position += toDestination / distance * Mathf.Min(speed * Time.deltaTime, distance);
         }
         if (animator != null) animator.SetFloat(SpeedParam, speed / moveSpeed);
+        moving = speed > 0f;
 
         AcquireTarget();
         if (target != null)
@@ -107,9 +151,41 @@ public class Soldier : MonoBehaviour
         return Quaternion.Angle(transform.rotation, targetRotation);
     }
 
+    // Kneels only while posted and standing still; stands up to move.
+    private void LateUpdate()
+    {
+        bool kneel = kneeling && leader == null && !moving;
+        kneelBlend = Mathf.MoveTowards(kneelBlend, kneel ? 1f : 0f, Time.deltaTime * 4f);
+        if (hips == null) return;
+        if (kneelBlend <= 0f)
+        {
+            if (firePoint != null) firePoint.localPosition = firePointRest;
+            return;
+        }
+
+        float k = kneelBlend * kneelBlend * (3f - 2f * kneelBlend);
+        Vector3 hipsPos = hips.localPosition;
+        float drop = hipsRestY * (1f - KneelHipsFactor) * k;
+        hips.localPosition = new Vector3(hipsPos.x, hipsPos.y - drop, hipsPos.z);
+        if (legL != null) legL.localRotation = Quaternion.Slerp(legL.localRotation, KneelLegL, k);
+        if (kneeL != null) kneeL.localRotation = Quaternion.Slerp(kneeL.localRotation, KneelKneeL, k);
+        if (legR != null) legR.localRotation = Quaternion.Slerp(legR.localRotation, KneelLegR, k);
+        if (kneeR != null) kneeR.localRotation = Quaternion.Slerp(kneeR.localRotation, KneelKneeR, k);
+        // Shots leave the lowered muzzle, not standing height.
+        if (firePoint != null) firePoint.localPosition = firePointRest + Vector3.down * drop;
+    }
+
+    // Fires in short bursts with uneven timing, then pauses as if re-aiming - so a line of
+    // soldiers never shoots in lockstep.
     private void Fire()
     {
-        cooldownTimer = 1f / (fireRate * RunModifiers.FireRate(TowerKind.Hero));
+        cooldownTimer = 1f / (fireRate * RunModifiers.FireRate(TowerKind.Hero)) * Random.Range(0.8f, 1.25f);
+        shotsLeftInBurst--;
+        if (shotsLeftInBurst <= 0)
+        {
+            cooldownTimer += Random.Range(0.5f, 1.1f);
+            shotsLeftInBurst = Random.Range(2, 5);
+        }
         if (projectilePrefab == null || firePoint == null) return;
 
         Projectile.FireVolley(projectilePrefab, firePoint, damage * RunModifiers.Damage(TowerKind.Hero), target, TowerKind.Hero);
