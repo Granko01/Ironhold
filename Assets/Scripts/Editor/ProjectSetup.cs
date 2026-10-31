@@ -388,7 +388,7 @@ public static class ProjectSetup
         director.Configure(cam, core.transform, hero.transform, breakable, postFx,
             walker, Load<Enemy>("EnemyRunner"), Load<Enemy>("EnemyBrute"), Load<Enemy>("EnemySpitter"), Load<Enemy>("EnemyBomber"), boss,
             Load<Soldier>("Soldier"), Load<DogCompanion>("Dog"),
-            ui.fade, ui.flash, ui.caption, ui.title, ui.subtitle, ui.callToAction);
+            ui.fade, ui.flash, ui.caption, ui.title, ui.subtitle, ui.callToAction, ui.comingSoon);
 
         // Opening frame of the first shot, so the Scene/Game view preview matches the start.
         cam.transform.SetPositionAndRotation(new Vector3(-6.5f, 1.1f, -32.5f), Quaternion.LookRotation(new Vector3(-3f, 0.9f, -28f) - new Vector3(-6.5f, 1.1f, -32.5f)));
@@ -448,9 +448,10 @@ public static class ProjectSetup
         toning.highlights.Override(new Color(1f, 0.7f, 0.42f));
         toning.balance.Override(-15f);
 
+        // Kept light: on a tall 9:16 frame a strong vignette closes in like a dark ring.
         Vignette vignette = GetOrAddVolumeOverride<Vignette>(profile);
-        vignette.intensity.Override(0.42f);
-        vignette.smoothness.Override(0.5f);
+        vignette.intensity.Override(0.18f);
+        vignette.smoothness.Override(0.8f);
 
         FilmGrain grain = GetOrAddVolumeOverride<FilmGrain>(profile);
         grain.type.Override(FilmGrainLookup.Medium2);
@@ -484,6 +485,7 @@ public static class ProjectSetup
         public Text title;
         public Text subtitle;
         public Text callToAction;
+        public Text comingSoon;
     }
 
     private static TrailerUi BuildTrailerUi()
@@ -509,8 +511,11 @@ public static class ProjectSetup
         ui.title.text = "IRON HOLD";
         ui.subtitle = CreateTrailerText(canvas, "Subtitle", 88, Color.white, new Vector2(0f, 110f));
         ui.subtitle.text = "LAST STAND";
-        ui.callToAction = CreateTrailerText(canvas, "CallToAction", 60, new Color(1f, 0.92f, 0.5f), new Vector2(0f, -120f));
-        ui.callToAction.text = "COMING SOON TO MOBILE";
+        // Ends on a question - it invites comments, which short-form apps reward.
+        ui.callToAction = CreateTrailerText(canvas, "CallToAction", 70, new Color(1f, 0.92f, 0.5f), new Vector2(0f, -130f));
+        ui.callToAction.text = "HOW LONG CAN\nYOU HOLD?";
+        ui.comingSoon = CreateTrailerText(canvas, "ComingSoon", 40, new Color(0.85f, 0.85f, 0.88f), new Vector2(0f, -330f));
+        ui.comingSoon.text = "COMING SOON TO MOBILE";
         return ui;
     }
 

@@ -37,6 +37,7 @@ public class TrailerDirector : MonoBehaviour
     [SerializeField] private Text title;
     [SerializeField] private Text subtitle;
     [SerializeField] private Text callToAction;
+    [SerializeField] private Text comingSoon;
 
     [Header("Horde")]
     [SerializeField] private float hordeInterval = 0.32f;
@@ -76,7 +77,7 @@ public class TrailerDirector : MonoBehaviour
     public void Configure(Camera camera, Transform coreTransform, Transform heroTransform, Wall breakableWall, Volume volume,
         Enemy walker, Enemy runner, Enemy brute, Enemy spitter, Enemy bomber, Enemy bossEnemy,
         Soldier soldier, DogCompanion dog,
-        Image fadeImage, Image flashImage, Text captionText, Text titleText, Text subtitleText, Text ctaText)
+        Image fadeImage, Image flashImage, Text captionText, Text titleText, Text subtitleText, Text ctaText, Text comingSoonText)
     {
         cam = camera;
         core = coreTransform;
@@ -97,6 +98,7 @@ public class TrailerDirector : MonoBehaviour
         title = titleText;
         subtitle = subtitleText;
         callToAction = ctaText;
+        comingSoon = comingSoonText;
     }
 
     private void Awake()
@@ -112,7 +114,7 @@ public class TrailerDirector : MonoBehaviour
         captionBasePosition = caption.rectTransform.anchoredPosition;
         SetAlpha(fade, 1f);
         SetAlpha(flash, 0f);
-        foreach (Text text in new[] { caption, title, subtitle, callToAction }) SetAlpha(text, 0f);
+        foreach (Text text in new[] { caption, title, subtitle, callToAction, comingSoon }) SetAlpha(text, 0f);
     }
 
     private void Update()
@@ -132,21 +134,19 @@ public class TrailerDirector : MonoBehaviour
         // south wall, when the base is revealed.
         foreach (Watchtower tower in FindObjectsByType<Watchtower>()) tower.StationGuard();
         SpawnDefenders();
+        // The team circles under characters are gameplay UI - they'd look out of place in a film.
+        foreach (Transform t in FindObjectsByType<Transform>()) if (t.name == "TeamRing") t.gameObject.SetActive(false);
 
-        // 0. Cold open: black screen, two heartbeat thuds, a whispered line.
+        // 1. Hook (no black open - viewers decide in the first second): straight in, low and close,
+        // as the first zombie bursts out of the dirt right in front of the lens.
+        StartCoroutine(FadeTo(fade, 0f, 0.35f));
         Sfx.Play(SfxId.Boom, 0.35f, 0.6f);
-        ShowWhisper("WHEN NIGHT FALLS...", 0.2f, 1.3f);
-        yield return new WaitForSeconds(0.45f);
-        Sfx.Play(SfxId.Boom, 0.32f, 0.5f);
-        yield return new WaitForSeconds(1.35f);
-
-        // 1. Hook: shallow focus, low in the treeline as the dead claw out of the dirt.
-        StartCoroutine(FadeTo(fade, 0f, 0.9f));
         Vector3 hookSpot = new Vector3(-3f, 0f, -28f);
         StartCoroutine(SpawnHookZombies(hookSpot));
-        ShowWhisper("THE DEAD RISE", 1.1f, 1.6f);
+        ShowWhisper("WHEN NIGHT FALLS...", 0.15f, 1.1f);
+        StartCoroutine(After(1.9f, () => ShowWhisper("THE DEAD RISE", 0f, 1.3f)));
         aperture = 1.8f;
-        yield return Shot(3.2f, k => Place(Vector3.Lerp(new Vector3(-6.5f, 1.1f, -32.5f), new Vector3(-5.6f, 1.3f, -31.2f), Ease(k)), hookSpot + Vector3.up * 0.9f));
+        yield return Shot(3.6f, k => Place(Vector3.Lerp(new Vector3(-4.7f, 0.7f, -30.7f), new Vector3(-4.3f, 0.95f, -30.1f), Ease(k)), hookSpot + Vector3.up * 0.8f));
 
         // 2. Reveal: drone push over the trees onto the walled village. The horde starts now.
         hordeActive = true;
@@ -174,15 +174,17 @@ public class TrailerDirector : MonoBehaviour
             Place(towerShotCenter + orbit, towerShotCenter + new Vector3(0f, 1.4f, -2.5f));
         });
 
+        // 4b. Cole: he turns from the breach to throw the hero a thumbs-up - and a zombie that came
+        // through the gap leaps onto his back. He goes down; it starts to feed.
+        yield return ColeIsJumped();
+
         // 5. Ambush: chase camera behind the hero, sprinting in from the edge of the base with
         // their dog. As they pull up, the view settles on a zombie hunched over a fallen soldier.
         heroShooter.enabled = false;
-        StageAmbush();
         Vector3 runFrom = new Vector3(-8.5f, 0f, -2.5f);
         Vector3 runTo = bodyMiddle + new Vector3(-1.2f, 0f, 3.4f);
         hero.SetPositionAndRotation(runFrom, Quaternion.LookRotation(runTo - runFrom));
         SpawnHeroDog(runFrom);
-        StartCoroutine(Feeding());
         ShowWhisper("NO ONE IS SAFE", 1.6f, 1.4f);
         aperture = 6f;
         // The chase camera and the dog's heel spot follow the run path, not the hero's facing, so
@@ -249,24 +251,197 @@ public class TrailerDirector : MonoBehaviour
         });
         cam.fieldOfView = DefaultFov;
 
-        // 9. Title: crane up over the base, darken, logo and call to action.
-        HideCaption();
-        Time.timeScale = 1f;
-        StartCoroutine(FadeTo(fade, 0.6f, 1f));
-        StartCoroutine(PunchIn(title, 0.3f));
-        StartCoroutine(PunchIn(subtitle, 0.8f));
-        StartCoroutine(PulseCallToAction(1.4f));
-        aperture = 9f;
-        yield return Shot(5.5f, k => Place(Vector3.Lerp(new Vector3(0f, 9f, -24f), new Vector3(0f, 32f, -36f), Ease(k)), core.position));
+        // 9. Face-off: the hero plants themselves in front of the giant, firing; it rears back
+        // to smash them - and we cut to black just before the blow lands.
+        yield return FaceOff();
 
+        // 10. Title on black: logo, then the question that gets people commenting.
+        HideCaption();
         hordeActive = false;
-        yield return FadeTo(fade, 1f, 0.5f);
-        yield return new WaitForSeconds(0.3f);
+        StartCoroutine(PunchIn(title, 0.5f));
+        StartCoroutine(PunchIn(subtitle, 1f));
+        StartCoroutine(PulseCallToAction(1.7f));
+        StartCoroutine(FadeTo(comingSoon, 1f, 0.5f, delay: 2.4f));
+        yield return new WaitForSecondsRealtime(4.6f);
 
 #if UNITY_EDITOR
         // Stops play mode, which also ends a Unity Recorder capture cleanly.
         UnityEditor.EditorApplication.isPlaying = false;
 #endif
+    }
+
+    private IEnumerator After(float seconds, Action action)
+    {
+        yield return new WaitForSeconds(seconds);
+        action();
+    }
+
+    // One continuous beat so there's no doubt who it is: Cole turns to camera with a thumbs-up, a
+    // zombie through the breach leaps onto his back, and he's driven face-down toward the camera.
+    // The zombie ends crouched at his side, feeding - the pose the run-in shot later reveals.
+    private IEnumerator ColeIsJumped()
+    {
+        if (victim == null) yield break;
+
+        victim.enabled = false;
+        Animator victimAnimator = victim.GetComponentInChildren<Animator>();
+        if (victimAnimator != null) victimAnimator.enabled = false;
+        Transform shoulder = FindChild(victim.transform, "ArmR");
+        Transform elbow = FindChild(victim.transform, "ArmR_Elbow");
+        Quaternion shoulderRest = shoulder != null ? shoulder.localRotation : Quaternion.identity;
+        Quaternion elbowRest = elbow != null ? elbow.localRotation : Quaternion.identity;
+
+        Vector3 feet = victim.transform.position;
+        Vector3 camFrom = feet + new Vector3(-1.6f, 1.55f, 2.5f);
+        Vector3 camTo = feet + new Vector3(-1.35f, 1.5f, 2.15f);
+        Vector3 toCamera = Flat(camFrom - feet).normalized;
+        Quaternion patrolling = Quaternion.Euler(0f, 90f, 0f);
+        Quaternion turned = Quaternion.LookRotation(toCamera);
+
+        // Where everything ends up: face-down, head toward the camera, zombie crouched at his side.
+        bodyMiddle = feet + toCamera * 1f;
+        Vector3 side = Vector3.Cross(Vector3.up, toCamera) * 0.75f;
+        Vector3 crouchPos = bodyMiddle + side + Vector3.down * 0.5f;
+        Quaternion crouchRot = Quaternion.LookRotation(-side) * Quaternion.Euler(38f, 0f, 0f);
+        Quaternion lyingRot = Quaternion.LookRotation(Vector3.down, toCamera);
+
+        ShowWhisper("SERGEANT LEO", 0.4f, 1.4f);
+        aperture = 2.6f;
+        Vector3 head = feet + Vector3.up * 1.75f;
+        bool jumped = false;
+        bool feeding = false;
+        float fallStart = -1f;
+
+        // Beat timings (seconds into the shot).
+        const float turnAt = 1f, raiseAt = 1.45f, appearAt = 1.8f, leapAt = 2.05f, leapSeconds = 0.35f, shotSeconds = 4f;
+
+        // The zombie appears in the gap behind him, then lunges.
+        Vector3 leapFrom = BreachPoint + new Vector3(0f, 0f, 1.7f);
+        StartCoroutine(After(appearAt, () =>
+        {
+            ambusher = Spawn(walkerPrefab, leapFrom, emerge: false);
+            if (ambusher == null) return;
+            ambusher.enabled = false;
+            ambusher.transform.rotation = Quaternion.LookRotation(Flat(feet - leapFrom));
+            Animator za = ambusher.GetComponentInChildren<Animator>();
+            if (za != null) za.SetTrigger("Attack");
+        }));
+
+        yield return Shot(shotSeconds, k =>
+        {
+            float time = k * shotSeconds;
+            if (!jumped)
+            {
+                // Looking along the wall, he turns to camera, then raises a thumb.
+                victim.transform.rotation = Quaternion.Slerp(patrolling, turned, Ease(Mathf.Clamp01((time - turnAt) / 0.5f)));
+                float raise = Ease(Mathf.Clamp01((time - raiseAt) / 0.3f));
+                if (shoulder != null) shoulder.localRotation = Quaternion.Slerp(shoulderRest, Quaternion.Euler(-70f, 10f, -12f), raise);
+                if (elbow != null) elbow.localRotation = Quaternion.Slerp(elbowRest, Quaternion.Euler(-105f, 0f, 0f), raise);
+            }
+
+            // The leap: a low arc onto his back, slowed right down as it starts.
+            if (ambusher != null && time >= leapAt && fallStart < 0f)
+            {
+                if (time - Time.deltaTime < leapAt) StartCoroutine(SlowMotion(0.35f, 0.6f));
+                float lk = Mathf.Clamp01((time - leapAt) / leapSeconds);
+                // Feet leave the ground at the gap and come down right behind him, arms on his back.
+                Vector3 landing = feet - toCamera * 0.45f;
+                Vector3 p = Vector3.Lerp(leapFrom, landing, lk) + Vector3.up * (0.7f * 4f * lk * (1f - lk));
+                ambusher.transform.SetPositionAndRotation(p, Quaternion.LookRotation(Flat(feet - leapFrom)) * Quaternion.Euler(Mathf.Lerp(10f, 30f, lk), 0f, 0f));
+                if (lk >= 1f)
+                {
+                    jumped = true;
+                    fallStart = time;
+                    GameFx.Debris(head, BloodColor, 16, 4f, 0.18f);
+                    Sfx.Play(SfxId.CoreHit, 0.7f, 0.9f);
+                    shake = 0.5f;
+                    PoseLimb(victim.transform, "ArmL", new Vector3(-150f, 0f, -20f));
+                    PoseLimb(victim.transform, "ArmR", new Vector3(-150f, 0f, 20f));
+                    if (elbow != null) elbow.localRotation = elbowRest;
+                }
+            }
+
+            // He's driven face-down; the zombie rides him down and settles into a crouch.
+            if (fallStart >= 0f)
+            {
+                float fk = Ease(Mathf.Clamp01((time - fallStart) / 0.4f));
+                victim.transform.SetPositionAndRotation(Vector3.Lerp(feet, feet + Vector3.up * 0.18f, fk), Quaternion.Slerp(turned, lyingRot, fk));
+                if (ambusher != null)
+                {
+                    Transform z = ambusher.transform;
+                    z.SetPositionAndRotation(Vector3.Lerp(z.position, crouchPos, fk), Quaternion.Slerp(z.rotation, crouchRot, fk));
+                }
+                // Linger on it: the feeding starts while we're still on the shot.
+                if (!feeding && time - fallStart > 0.45f)
+                {
+                    feeding = true;
+                    StartCoroutine(Feeding());
+                }
+            }
+
+            Place(Vector3.Lerp(camFrom, camTo, Ease(k)), fallStart >= 0f ? Vector3.Lerp(head, bodyMiddle + Vector3.up * 0.4f, Ease(Mathf.Clamp01((time - fallStart) / 0.6f))) : head);
+        });
+
+        // Lock in the final pose for later, rifle gone, and start the feeding.
+        victim.transform.SetPositionAndRotation(feet + Vector3.up * 0.18f, lyingRot);
+        PoseLimb(victim.transform, "LegL", new Vector3(0f, 0f, -6f));
+        PoseLimb(victim.transform, "LegR", new Vector3(0f, 0f, 9f));
+        Transform rifle = FindChild(victim.transform, "Rifle");
+        if (rifle != null) rifle.gameObject.SetActive(false);
+        if (ambusher != null) ambusher.transform.SetPositionAndRotation(crouchPos, crouchRot);
+        if (!feeding) StartCoroutine(Feeding());
+    }
+
+    // Hero steps up to the boss and opens fire; it winds up a haymaker in slow motion and the
+    // frame cuts to black with the fist at the top of the swing.
+    private IEnumerator FaceOff()
+    {
+        heroShooter.enabled = true;
+        hero.SetPositionAndRotation(new Vector3(1.5f, 0f, GateZ - 4.5f), Quaternion.Euler(0f, 180f, 0f));
+        if (heroAnimator != null) heroAnimator.SetFloat(SpeedParam, 0f);
+
+        Animator bossAnimator = null;
+        // The boss stays a live enemy (the hero's auto-aim fires at it); at slow-motion speed it
+        // barely moves in the second this lasts.
+        if (boss != null)
+        {
+            Vector3 bossPos = hero.position + Vector3.back * 5.2f;
+            boss.transform.SetPositionAndRotation(bossPos, Quaternion.LookRotation(Flat(hero.position - bossPos)));
+            bossAnimator = boss.GetComponentInChildren<Animator>();
+        }
+        Vector3 bossHead = (boss != null ? boss.transform.position : hero.position + Vector3.back * 5.2f) + Vector3.up * 3.8f;
+
+        Time.timeScale = 0.25f;
+        aperture = 2.8f;
+        StartCoroutine(After(0.2f, () =>
+        {
+            if (bossAnimator != null) bossAnimator.SetTrigger("Attack");
+            Sfx.Play(SfxId.Boom, 0.35f, 0.7f);
+            shake = 0.4f;
+        }));
+        // Low over the hero's right shoulder, looking up at the giant.
+        yield return Shot(0.33f, k => Place(hero.position + hero.rotation * Vector3.Lerp(new Vector3(0.75f, 1.15f, -2.3f), new Vector3(0.7f, 1.1f, -2f), k), bossHead, roll: 4f));
+
+        // Hard cut on the swing.
+        Time.timeScale = 1f;
+        SetAlpha(fade, 1f);
+        Sfx.Play(SfxId.Boom, 0.3f, 1f);
+        yield return new WaitForSecondsRealtime(0.5f);
+    }
+
+    private static void HideTeamRings(GameObject character)
+    {
+        Transform ring = FindChild(character.transform, "TeamRing");
+        if (ring != null) ring.gameObject.SetActive(false);
+    }
+
+    private static Transform FindChild(Transform root, string name)
+    {
+        foreach (Transform t in root.GetComponentsInChildren<Transform>())
+        {
+            if (t.name == name) return t;
+        }
+        return null;
     }
 
     // --- Camera -------------------------------------------------------------
@@ -360,15 +535,19 @@ public class TrailerDirector : MonoBehaviour
         if (prefab == null) return null;
         Enemy enemy = Instantiate(prefab, position, Quaternion.identity);
         enemy.Initialize(core, emerge);
+        HideTeamRings(enemy.gameObject);
         return enemy;
     }
 
     private IEnumerator SpawnHookZombies(Vector3 spot)
     {
         Vector3[] offsets = { new Vector3(0f, 0f, 0f), new Vector3(-1.6f, 0f, 0.8f), new Vector3(1.4f, 0f, 1.2f) };
-        foreach (Vector3 offset in offsets)
+        // The first one bursts out immediately - the opening frame is the hook.
+        float[] waits = { 0.05f, 0.6f, 0.6f };
+        for (int i = 0; i < offsets.Length; i++)
         {
-            yield return new WaitForSeconds(0.6f);
+            Vector3 offset = offsets[i];
+            yield return new WaitForSeconds(waits[i]);
             Spawn(walkerPrefab, spot + offset, emerge: true);
             Sfx.Play(SfxId.Pop, 0.6f, 0.7f);
         }
@@ -423,41 +602,6 @@ public class TrailerDirector : MonoBehaviour
         victim.HoldPosition(victim.transform.position);
     }
 
-    // A zombie that slipped through the breach has brought a soldier down: he lies flat on his
-    // back and the zombie crouches low beside his chest, feeding. Both are frozen in place
-    // (scripts and animators off, limbs posed by hand) so the beat plays the same every take.
-    private void StageAmbush()
-    {
-        victim.enabled = false;
-        Animator victimAnimator = victim.GetComponentInChildren<Animator>();
-        if (victimAnimator != null) victimAnimator.enabled = false;
-
-        // Tipped onto his back, head toward the west (the side the hero runs in from).
-        Vector3 feet = victim.transform.position;
-        victim.transform.SetPositionAndRotation(feet + Vector3.up * 0.18f, Quaternion.Euler(-90f, 90f, 0f));
-        PoseLimb(victim.transform, "Torso", Vector3.zero);
-        PoseLimb(victim.transform, "ArmL", new Vector3(0f, 0f, -18f));
-        PoseLimb(victim.transform, "ArmR", new Vector3(0f, 0f, 18f));
-        PoseLimb(victim.transform, "LegL", new Vector3(0f, 0f, -6f));
-        PoseLimb(victim.transform, "LegR", new Vector3(0f, 0f, 9f));
-        // With the arms posed by hand, the rifle would hang off at an odd angle - he's lost it.
-        foreach (Transform t in victim.GetComponentsInChildren<Transform>())
-        {
-            if (t.name == "Rifle") t.gameObject.SetActive(false);
-        }
-        bodyMiddle = feet + Vector3.left * 1.2f;
-        GameFx.Debris(bodyMiddle + Vector3.up * 0.2f, BloodColor, 10, 2f, 0.16f);
-
-        // Crouched at his side: sunk to the knees and hunched forward over the chest.
-        Vector3 side = Vector3.back * 0.75f;
-        ambusher = Spawn(walkerPrefab, bodyMiddle + side, emerge: false);
-        if (ambusher != null)
-        {
-            ambusher.enabled = false;
-            ambusher.transform.SetPositionAndRotation(bodyMiddle + side + Vector3.down * 0.5f, Quaternion.LookRotation(-side) * Quaternion.Euler(38f, 0f, 0f));
-        }
-    }
-
     private static void PoseLimb(Transform root, string name, Vector3 euler)
     {
         foreach (Transform t in root.GetComponentsInChildren<Transform>())
@@ -477,6 +621,7 @@ public class TrailerDirector : MonoBehaviour
         if (dogPrefab == null) return;
         ambushDog = Instantiate(dogPrefab, near + hero.rotation * DogHeelOffset, hero.rotation);
         ambushDog.enabled = false;
+        HideTeamRings(ambushDog.gameObject);
     }
 
     private static readonly Vector3 DogHeelOffset = new Vector3(-1f, 0f, -0.8f);
@@ -690,8 +835,9 @@ public class TrailerDirector : MonoBehaviour
         }
     }
 
-    private IEnumerator FadeTo(Graphic graphic, float target, float duration)
+    private IEnumerator FadeTo(Graphic graphic, float target, float duration, float delay = 0f)
     {
+        if (delay > 0f) yield return new WaitForSecondsRealtime(delay);
         float start = graphic.color.a;
         for (float t = 0f; t < duration; t += Time.unscaledDeltaTime)
         {
