@@ -114,6 +114,28 @@ public class DogCompanion : MonoBehaviour
         Sfx.Play(SfxId.Hit, 0.75f, 0.9f);
     }
 
+    // Scripted scenes (the trailer) move the dog themselves with this component disabled; these
+    // drive the same procedural rig so it still looks alive.
+    public void AnimateGait(float speed) => Animate(speed);
+
+    // Mid-leap stretch: front legs reach forward, hind legs kick back. 0 = neutral, 1 = full stretch.
+    public void PoseLeap(float stretch)
+    {
+        if (legs == null) return;
+        for (int i = 0; i < legs.Length; i++)
+        {
+            if (legs[i] == null) continue;
+            bool front = i < 2;
+            legs[i].localRotation = Quaternion.Euler((front ? -70f : 55f) * stretch, 0f, 0f);
+        }
+    }
+
+    // Side-to-side tug of the head while it has hold of something.
+    public void ShakeHead(float yawDegrees)
+    {
+        if (head != null) head.localRotation = Quaternion.Euler(12f, yawDegrees, 0f);
+    }
+
     private void Animate(float speed)
     {
         float moving = Mathf.Clamp01(speed / moveSpeed);

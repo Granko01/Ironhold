@@ -153,8 +153,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3409f49c4e35d48b182c1522e089a51a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Projectile
-  speed: 30
-  lifetime: 2
+  speed: 45
+  lifetime: 1.2
   homing: 0
   turnRate: 540
   splashRadius: 0
@@ -164,3 +164,4 @@ MonoBehaviour:
   chainRange: 4.5
   chainDamageFalloff: 0.75
   fxColor: {r: 0.4, g: 0.85, b: 1, a: 1}
+  isBullet: 0

@@ -18,6 +18,8 @@ public static class CharacterFactory
         public Color weaponDark;
     }
 
+    // All sizes are in metres, as they appear in the world (body parts are never parented under a
+    // scaled block, so nothing gets squashed or sheared).
     public struct BipedProportions
     {
         public float hipsY;
@@ -26,9 +28,11 @@ public static class CharacterFactory
         public Vector3 headSize;
         public Vector3 headwearSize;
         public bool headwearIsDome;
+        // Whole leg, hip to sole (thigh + shin + foot).
         public Vector3 legSize;
         public float legSpacingX;
         public Vector3 footSize;
+        // Whole arm, shoulder to fingertips (upper arm + forearm + hand).
         public Vector3 armSize;
         public float armSpacingX;
         public float armY;
@@ -37,157 +41,182 @@ public static class CharacterFactory
         // Runner). Animation curves add on top of this rather than overriding it.
         public float torsoRestLeanX;
 
-        // Baked-in arm hinge rotations (e.g. the Commander holding a weapon up at chest height).
+        // Baked-in shoulder rotations (e.g. the Commander holding a weapon up at chest height).
         // Like torsoRestLeanX, the arm swing curves oscillate around these instead of hanging straight.
         public Vector3 armRestEulerL;
         public Vector3 armRestEulerR;
 
-        // Multiplier on hand size; 0 means the default (hands about as wide as the arm).
+        // Fixed elbow bend (degrees about X, negative brings the forearm forward/up).
+        public float elbowRestL;
+        public float elbowRestR;
+
+        // Multiplier on hand size; 0 means the default.
         public float handScale;
     }
 
-    // Heads are deliberately oversized (about 1.45x a realistic ratio) - the chunky-head style
-    // keeps faces and silhouettes readable from the overhead camera on a phone.
+    private const float NeckHeight = 0.05f;
+
+    // Head centre / top, relative to the torso's centre - shared with the gear and face builders.
+    public static float HeadCenterY(BipedProportions p) => p.torsoSize.y * 0.5f + NeckHeight + p.headSize.y * 0.5f;
+    public static float HeadTopY(BipedProportions p) => p.torsoSize.y * 0.5f + NeckHeight + p.headSize.y;
+
+    // About 1.95m. Heads run a little large (a stylised touch that keeps faces readable on a phone).
     public static readonly BipedProportions PlayerProportions = new BipedProportions
     {
-        hipsY = 0.95f,
-        pelvisSize = new Vector3(0.5f, 0.22f, 0.32f),
-        torsoSize = new Vector3(0.54f, 0.684f, 0.313f),
-        headSize = new Vector3(0.551f, 0.522f, 0.551f),
-        headwearSize = new Vector3(0.638f, 0.338f, 0.638f),
+        hipsY = 0.88f,
+        pelvisSize = new Vector3(0.38f, 0.18f, 0.24f),
+        torsoSize = new Vector3(0.48f, 0.58f, 0.27f),
+        headSize = new Vector3(0.32f, 0.34f, 0.33f),
+        headwearSize = new Vector3(0.38f, 0.22f, 0.4f),
         headwearIsDome = true,
-        legSize = new Vector3(0.22f, 0.85f, 0.22f),
-        legSpacingX = 0.18f,
-        footSize = new Vector3(0.26f, 0.14f, 0.42f),
-        armSize = new Vector3(0.2f, 0.5f, 0.2f),
-        armSpacingX = 0.368f,
-        armY = 0.26f,
+        legSize = new Vector3(0.16f, 0.88f, 0.17f),
+        legSpacingX = 0.11f,
+        footSize = new Vector3(0.15f, 0.1f, 0.28f),
+        armSize = new Vector3(0.12f, 0.66f, 0.12f),
+        armSpacingX = 0.3f,
+        armY = 0.22f,
         torsoRestLeanX = 0f,
-        // Right arm reaches forward-inward for the grip, left arm crosses over to steady the barrel.
-        armRestEulerL = new Vector3(-62f, 42f, 0f),
-        armRestEulerR = new Vector3(-58f, -30f, 0f),
-        // Chunky hands read at phone size and make the weapon grip obvious.
-        handScale = 1.6f,
+        // Rifle held at the shoulder: right hand on the grip with the elbow tucked, left arm
+        // reaching across to steady the barrel.
+        armRestEulerL = new Vector3(-48f, 34f, 0f),
+        armRestEulerR = new Vector3(-28f, -18f, 0f),
+        elbowRestL = -42f,
+        elbowRestR = -68f,
+        handScale = 1.1f,
     };
 
     public static readonly BipedProportions GruntProportions = new BipedProportions
     {
-        hipsY = 0.85f,
-        pelvisSize = new Vector3(0.54f, 0.22f, 0.36f),
-        torsoSize = new Vector3(0.594f, 0.646f, 0.35f),
-        headSize = new Vector3(0.551f, 0.493f, 0.551f),
-        headwearSize = new Vector3(0.667f, 0.182f, 0.667f),
+        hipsY = 0.84f,
+        pelvisSize = new Vector3(0.38f, 0.18f, 0.25f),
+        torsoSize = new Vector3(0.48f, 0.56f, 0.28f),
+        headSize = new Vector3(0.3f, 0.33f, 0.32f),
+        headwearSize = new Vector3(0.32f, 0.08f, 0.33f),
         headwearIsDome = false,
-        legSize = new Vector3(0.24f, 0.7f, 0.24f),
-        legSpacingX = 0.2f,
-        footSize = new Vector3(0.28f, 0.14f, 0.44f),
-        armSize = new Vector3(0.22f, 0.46f, 0.22f),
-        armSpacingX = 0.405f,
-        armY = 0.24f,
+        legSize = new Vector3(0.16f, 0.84f, 0.17f),
+        legSpacingX = 0.11f,
+        footSize = new Vector3(0.14f, 0.09f, 0.26f),
+        armSize = new Vector3(0.11f, 0.68f, 0.11f),
+        armSpacingX = 0.29f,
+        armY = 0.21f,
         torsoRestLeanX = 0f,
+        elbowRestL = -12f,
+        elbowRestR = -12f,
     };
 
     public static readonly BipedProportions RunnerProportions = new BipedProportions
     {
-        hipsY = 0.72f,
-        pelvisSize = new Vector3(0.34f, 0.16f, 0.24f),
-        torsoSize = new Vector3(0.378f, 0.513f, 0.221f),
-        headSize = new Vector3(0.435f, 0.406f, 0.435f),
-        headwearSize = new Vector3(0.464f, 0.13f, 0.261f),
+        hipsY = 0.82f,
+        pelvisSize = new Vector3(0.32f, 0.16f, 0.21f),
+        torsoSize = new Vector3(0.38f, 0.5f, 0.22f),
+        headSize = new Vector3(0.27f, 0.3f, 0.29f),
+        headwearSize = new Vector3(0.29f, 0.07f, 0.3f),
         headwearIsDome = false,
-        legSize = new Vector3(0.17f, 0.65f, 0.17f),
-        legSpacingX = 0.15f,
-        footSize = new Vector3(0.2f, 0.12f, 0.34f),
-        armSize = new Vector3(0.15f, 0.4f, 0.15f),
-        armSpacingX = 0.276f,
-        armY = 0.2f,
+        legSize = new Vector3(0.13f, 0.82f, 0.14f),
+        legSpacingX = 0.09f,
+        footSize = new Vector3(0.12f, 0.08f, 0.24f),
+        armSize = new Vector3(0.09f, 0.64f, 0.09f),
+        armSpacingX = 0.24f,
+        armY = 0.19f,
         torsoRestLeanX = 22f,
+        elbowRestL = -20f,
+        elbowRestR = -20f,
     };
 
     public static readonly BipedProportions BruteProportions = new BipedProportions
     {
-        hipsY = 1.15f,
-        pelvisSize = new Vector3(0.78f, 0.3f, 0.5f),
-        torsoSize = new Vector3(0.9f, 0.95f, 0.515f),
-        headSize = new Vector3(0.58f, 0.522f, 0.58f),
-        headwearSize = new Vector3(0.609f, 0.208f, 0.609f),
+        hipsY = 1.05f,
+        pelvisSize = new Vector3(0.62f, 0.26f, 0.38f),
+        torsoSize = new Vector3(0.86f, 0.82f, 0.46f),
+        headSize = new Vector3(0.36f, 0.36f, 0.38f),
+        headwearSize = new Vector3(0.38f, 0.1f, 0.4f),
         headwearIsDome = false,
-        legSize = new Vector3(0.34f, 1.02f, 0.34f),
-        legSpacingX = 0.26f,
-        footSize = new Vector3(0.36f, 0.16f, 0.5f),
-        armSize = new Vector3(0.34f, 0.72f, 0.34f),
-        armSpacingX = 0.534f,
-        armY = 0.34f,
+        legSize = new Vector3(0.26f, 1.05f, 0.27f),
+        legSpacingX = 0.17f,
+        footSize = new Vector3(0.22f, 0.12f, 0.38f),
+        armSize = new Vector3(0.22f, 0.95f, 0.22f),
+        armSpacingX = 0.55f,
+        armY = 0.3f,
         torsoRestLeanX = 0f,
+        elbowRestL = -15f,
+        elbowRestR = -15f,
     };
 
     public static readonly BipedProportions SpitterProportions = new BipedProportions
     {
         hipsY = 0.82f,
-        pelvisSize = new Vector3(0.44f, 0.2f, 0.32f),
-        torsoSize = new Vector3(0.558f, 0.57f, 0.386f),
-        headSize = new Vector3(0.435f, 0.406f, 0.435f),
-        headwearSize = new Vector3(0.464f, 0.104f, 0.406f),
+        pelvisSize = new Vector3(0.36f, 0.18f, 0.26f),
+        torsoSize = new Vector3(0.5f, 0.52f, 0.34f),
+        headSize = new Vector3(0.29f, 0.31f, 0.31f),
+        headwearSize = new Vector3(0.3f, 0.06f, 0.3f),
         headwearIsDome = false,
-        legSize = new Vector3(0.17f, 0.74f, 0.17f),
-        legSpacingX = 0.16f,
-        footSize = new Vector3(0.2f, 0.12f, 0.34f),
-        armSize = new Vector3(0.16f, 0.42f, 0.16f),
-        armSpacingX = 0.294f,
+        legSize = new Vector3(0.14f, 0.82f, 0.15f),
+        legSpacingX = 0.1f,
+        footSize = new Vector3(0.13f, 0.08f, 0.25f),
+        armSize = new Vector3(0.1f, 0.62f, 0.1f),
+        armSpacingX = 0.28f,
         armY = 0.2f,
         torsoRestLeanX = 10f,
+        elbowRestL = -15f,
+        elbowRestR = -15f,
     };
 
     public static readonly BipedProportions BomberProportions = new BipedProportions
     {
-        hipsY = 0.84f,
-        pelvisSize = new Vector3(0.5f, 0.2f, 0.34f),
-        torsoSize = new Vector3(0.54f, 0.608f, 0.331f),
-        headSize = new Vector3(0.493f, 0.464f, 0.493f),
-        headwearSize = new Vector3(0.58f, 0.156f, 0.58f),
+        hipsY = 0.8f,
+        pelvisSize = new Vector3(0.44f, 0.2f, 0.32f),
+        torsoSize = new Vector3(0.58f, 0.58f, 0.4f),
+        headSize = new Vector3(0.31f, 0.32f, 0.32f),
+        headwearSize = new Vector3(0.33f, 0.07f, 0.33f),
         headwearIsDome = false,
-        legSize = new Vector3(0.22f, 0.76f, 0.22f),
-        legSpacingX = 0.18f,
-        footSize = new Vector3(0.26f, 0.14f, 0.4f),
-        armSize = new Vector3(0.2f, 0.44f, 0.2f),
-        armSpacingX = 0.368f,
-        armY = 0.24f,
+        legSize = new Vector3(0.17f, 0.8f, 0.18f),
+        legSpacingX = 0.13f,
+        footSize = new Vector3(0.15f, 0.09f, 0.27f),
+        armSize = new Vector3(0.12f, 0.62f, 0.12f),
+        armSpacingX = 0.33f,
+        armY = 0.21f,
         torsoRestLeanX = 0f,
+        elbowRestL = -12f,
+        elbowRestR = -12f,
     };
 
     public static readonly BipedProportions EngineerProportions = new BipedProportions
     {
-        hipsY = 0.85f,
-        pelvisSize = new Vector3(0.5f, 0.2f, 0.32f),
-        torsoSize = new Vector3(0.522f, 0.608f, 0.313f),
-        headSize = new Vector3(0.493f, 0.464f, 0.493f),
-        headwearSize = new Vector3(0.58f, 0.26f, 0.58f),
+        hipsY = 0.84f,
+        pelvisSize = new Vector3(0.38f, 0.18f, 0.25f),
+        torsoSize = new Vector3(0.48f, 0.56f, 0.28f),
+        headSize = new Vector3(0.3f, 0.33f, 0.32f),
+        headwearSize = new Vector3(0.36f, 0.17f, 0.38f),
         headwearIsDome = true,
-        legSize = new Vector3(0.2f, 0.77f, 0.2f),
-        legSpacingX = 0.18f,
-        footSize = new Vector3(0.24f, 0.14f, 0.38f),
-        armSize = new Vector3(0.18f, 0.44f, 0.18f),
-        armSpacingX = 0.331f,
-        armY = 0.22f,
+        legSize = new Vector3(0.16f, 0.84f, 0.17f),
+        legSpacingX = 0.11f,
+        footSize = new Vector3(0.15f, 0.1f, 0.28f),
+        armSize = new Vector3(0.11f, 0.66f, 0.11f),
+        armSpacingX = 0.29f,
+        armY = 0.21f,
         torsoRestLeanX = 0f,
+        elbowRestL = -12f,
+        elbowRestR = -12f,
     };
 
-    // ~2.6x PlayerProportions' height, within the brief's 2-3x range.
+    // About 5.2m, roughly 2.7x the hero.
     public static readonly BipedProportions BossProportions = new BipedProportions
     {
-        hipsY = 2.6f,
-        pelvisSize = new Vector3(1.6f, 0.6f, 1.0f),
-        torsoSize = new Vector3(1.8f, 1.9f, 1.012f),
-        headSize = new Vector3(0.797f, 0.725f, 0.797f),
-        headwearSize = new Vector3(0.899f, 0.286f, 0.899f),
+        hipsY = 2.3f,
+        pelvisSize = new Vector3(1.2f, 0.5f, 0.75f),
+        torsoSize = new Vector3(1.7f, 1.6f, 0.95f),
+        headSize = new Vector3(0.7f, 0.7f, 0.72f),
+        headwearSize = new Vector3(0.74f, 0.18f, 0.76f),
         headwearIsDome = false,
-        legSize = new Vector3(0.6f, 2.45f, 0.6f),
-        legSpacingX = 0.55f,
-        footSize = new Vector3(0.75f, 0.32f, 1.05f),
-        armSize = new Vector3(0.65f, 1.5f, 0.65f),
-        armSpacingX = 1.104f,
-        armY = 0.7f,
+        legSize = new Vector3(0.5f, 2.3f, 0.52f),
+        legSpacingX = 0.38f,
+        footSize = new Vector3(0.45f, 0.25f, 0.8f),
+        armSize = new Vector3(0.45f, 2f, 0.45f),
+        armSpacingX = 1.05f,
+        armY = 0.62f,
         torsoRestLeanX = 0f,
+        elbowRestL = -15f,
+        elbowRestR = -15f,
     };
 
     // A copy of `p` posed like the undead: arms reaching forward (each its own angle, for an
@@ -203,11 +232,24 @@ public static class CharacterFactory
     public struct BipedRig
     {
         public Transform hips;
+        public Transform pelvis;
         public Transform torso;
         public Transform armLHinge;
         public Transform armRHinge;
+        public Transform elbowL;
+        public Transform elbowR;
+        public Transform forearmL;
+        public Transform forearmR;
+        public Transform handL;
+        public Transform handR;
         public Transform legLHinge;
         public Transform legRHinge;
+        public Transform kneeL;
+        public Transform kneeR;
+        public Transform thighL;
+        public Transform thighR;
+        public Transform shinL;
+        public Transform shinR;
         public Transform weaponSocket;
         public Transform muzzle;
         public Transform rifle;
@@ -224,65 +266,115 @@ public static class CharacterFactory
 
         BipedRig rig = default;
 
-        GameObject hipsGo = new GameObject("Hips");
-        hipsGo.transform.SetParent(root.transform, false);
-        hipsGo.transform.localPosition = new Vector3(0f, p.hipsY, 0f);
-        rig.hips = hipsGo.transform;
+        rig.hips = Pivot("Hips", root.transform, new Vector3(0f, p.hipsY, 0f));
+        rig.pelvis = LowPolyKit.CreateBlock("Pelvis", rig.hips, new Vector3(0f, p.pelvisSize.y * 0.5f, 0f), Vector3.zero, p.pelvisSize, uniformMat);
 
-        LowPolyKit.CreateBlock("Pelvis", rig.hips, new Vector3(0f, p.pelvisSize.y * 0.5f, 0f), Vector3.zero, p.pelvisSize, uniformMat);
+        // The torso is an unscaled pivot (animated for lean/twist); its look is a broad chest over a
+        // narrower waist, so the silhouette tapers like a real body.
+        Vector3 t = p.torsoSize;
+        rig.torso = Pivot("Torso", rig.hips, new Vector3(0f, p.pelvisSize.y + t.y * 0.5f, 0f));
+        LowPolyKit.CreateBlock("Chest", rig.torso, new Vector3(0f, t.y * 0.21f, 0f), Vector3.zero, new Vector3(t.x, t.y * 0.58f, t.z), uniformMat);
+        LowPolyKit.CreateBlock("Waist", rig.torso, new Vector3(0f, -t.y * 0.26f, 0f), Vector3.zero, new Vector3(t.x * 0.82f, t.y * 0.48f, t.z * 0.92f), uniformMat);
 
-        Transform torso = LowPolyKit.CreateBlock("Torso", rig.hips, new Vector3(0f, p.pelvisSize.y + p.torsoSize.y * 0.5f, 0f), Vector3.zero, p.torsoSize, uniformMat);
-        rig.torso = torso;
+        Vector3 h = p.headSize;
+        LowPolyKit.CreateBlock("Neck", rig.torso, new Vector3(0f, t.y * 0.5f + NeckHeight * 0.5f, 0f), Vector3.zero, new Vector3(h.x * 0.42f, NeckHeight + 0.04f, h.z * 0.42f), skinMat);
+        float headY = HeadCenterY(p);
+        LowPolyKit.CreateBlock("Head", rig.torso, new Vector3(0f, headY, 0f), Vector3.zero, h, skinMat);
+        LowPolyKit.CreateBlock("Nose", rig.torso, new Vector3(0f, headY - h.y * 0.08f, h.z * 0.5f + 0.015f), Vector3.zero, new Vector3(h.x * 0.14f, h.y * 0.18f, 0.05f), skinMat);
+        LowPolyKit.CreateBlock("EarL", rig.torso, new Vector3(-h.x * 0.5f - 0.01f, headY, 0f), Vector3.zero, new Vector3(0.04f, h.y * 0.26f, h.z * 0.2f), skinMat);
+        LowPolyKit.CreateBlock("EarR", rig.torso, new Vector3(h.x * 0.5f + 0.01f, headY, 0f), Vector3.zero, new Vector3(0.04f, h.y * 0.26f, h.z * 0.2f), skinMat);
+        LowPolyKit.CreateBlock("Brow", rig.torso, new Vector3(0f, headY + h.y * 0.17f, h.z * 0.5f + 0.01f), Vector3.zero, new Vector3(h.x * 0.72f, h.y * 0.06f, 0.03f), headwearMat);
 
-        LowPolyKit.CreateBlock("Head", torso, new Vector3(0f, p.torsoSize.y * 0.5f + p.headSize.y * 0.5f - 0.02f, 0f), Vector3.zero, p.headSize, skinMat);
+        float headTop = HeadTopY(p);
+        Vector3 headwearPos = p.headwearIsDome
+            ? new Vector3(0f, headTop - p.headwearSize.y * 0.2f, 0f)
+            : new Vector3(0f, headTop + p.headwearSize.y * 0.5f - 0.02f, -h.z * 0.04f);
+        LowPolyKit.CreateBlock("Headwear", rig.torso, headwearPos, Vector3.zero, p.headwearSize, headwearMat, p.headwearIsDome ? PrimitiveType.Sphere : PrimitiveType.Cube);
 
-        Vector3 headwearLocalPos = new Vector3(0f, p.torsoSize.y * 0.5f + p.headSize.y + p.headwearSize.y * 0.5f - 0.08f, 0f);
-        LowPolyKit.CreateBlock("Headwear", torso, headwearLocalPos, Vector3.zero, p.headwearSize, headwearMat, p.headwearIsDome ? PrimitiveType.Sphere : PrimitiveType.Cube);
+        LowPolyKit.CreateBlock("ChestAccent", rig.torso, new Vector3(0f, t.y * 0.22f, t.z * 0.5f + 0.01f), Vector3.zero, new Vector3(0.1f, 0.1f, 0.03f), accentMat);
 
-        LowPolyKit.CreateBlock("ChestAccent", torso, new Vector3(0f, 0.1f, p.torsoSize.z * 0.5f - 0.01f), Vector3.zero, new Vector3(0.14f, 0.14f, 0.04f), accentMat);
+        float handScale = p.handScale > 0f ? p.handScale : 1f;
+        rig.armLHinge = BuildArm("ArmL", rig.torso, -1f, p, p.armRestEulerL, p.elbowRestL, handScale, uniformMat, skinMat, out rig.elbowL, out rig.forearmL, out rig.handL);
+        rig.armRHinge = BuildArm("ArmR", rig.torso, 1f, p, p.armRestEulerR, p.elbowRestR, handScale, uniformMat, skinMat, out rig.elbowR, out rig.forearmR, out rig.handR);
 
-        rig.armLHinge = LowPolyKit.CreateHingeLimb("ArmL", torso, new Vector3(-p.armSpacingX, p.armY, 0f), p.armSize, uniformMat, out _);
-        rig.armRHinge = LowPolyKit.CreateHingeLimb("ArmR", torso, new Vector3(p.armSpacingX, p.armY, 0f), p.armSize, uniformMat, out _);
-        rig.armLHinge.localRotation = Quaternion.Euler(p.armRestEulerL);
-        rig.armRHinge.localRotation = Quaternion.Euler(p.armRestEulerR);
-
-        GameObject socketGo = new GameObject("WeaponSocket");
-        socketGo.transform.SetParent(rig.armRHinge, false);
-        socketGo.transform.localPosition = new Vector3(0f, -p.armSize.y, 0.12f);
-        // Cancels the arm's rest rotation so a held weapon points straight ahead in the rest pose.
-        socketGo.transform.localRotation = Quaternion.Inverse(Quaternion.Euler(p.armRestEulerR));
-        rig.weaponSocket = socketGo.transform;
+        // The weapon rides in the right hand. Its rotation cancels the shoulder and elbow rest
+        // pose, so a held gun points straight ahead in the rest pose.
+        float foreLen = p.armSize.y * ForearmShare;
+        float handLen = p.armSize.y * HandShare * handScale;
+        rig.weaponSocket = Pivot("WeaponSocket", rig.elbowR, new Vector3(0f, -foreLen - handLen * 0.5f, 0.03f));
+        rig.weaponSocket.localRotation = Quaternion.Inverse(Quaternion.Euler(p.armRestEulerR) * Quaternion.Euler(p.elbowRestR, 0f, 0f));
 
         if (hasWeapon)
         {
-            float handSize = p.armSize.x * 1.05f * (p.handScale > 0f ? p.handScale : 1f);
-            LowPolyKit.CreateBlock("HandR", rig.armRHinge, new Vector3(0f, -p.armSize.y - handSize * 0.35f, 0f), Vector3.zero, Vector3.one * handSize, skinMat);
-            LowPolyKit.CreateBlock("HandL", rig.armLHinge, new Vector3(0f, -p.armSize.y - handSize * 0.35f, 0f), Vector3.zero, Vector3.one * handSize, skinMat);
-
             GameObject rifle = new GameObject("Rifle");
             rifle.transform.SetParent(rig.weaponSocket, false);
             rig.rifle = rifle.transform;
             rig.muzzle = BuildRifle(rig.rifle, weaponBodyMat, weaponDarkMat);
         }
-        else
-        {
-            float fistSize = p.armSize.x * 1.5f;
-            LowPolyKit.CreateBlock("Fist", rig.weaponSocket, Vector3.zero, Vector3.zero, new Vector3(fistSize, fistSize, fistSize), weaponDarkMat);
 
-            GameObject handSocketL = new GameObject("HandSocketL");
-            handSocketL.transform.SetParent(rig.armLHinge, false);
-            handSocketL.transform.localPosition = new Vector3(0f, -p.armSize.y, 0.12f);
-            LowPolyKit.CreateBlock("Fist", handSocketL.transform, Vector3.zero, Vector3.zero, new Vector3(fistSize, fistSize, fistSize), weaponDarkMat);
-
-            rig.muzzle = null;
-        }
-
-        rig.legLHinge = LowPolyKit.CreateHingeLimb("LegL", rig.hips, new Vector3(-p.legSpacingX, 0f, 0f), p.legSize, uniformMat, out _);
-        rig.legRHinge = LowPolyKit.CreateHingeLimb("LegR", rig.hips, new Vector3(p.legSpacingX, 0f, 0f), p.legSize, uniformMat, out _);
-        LowPolyKit.CreateBlock("FootL", rig.legLHinge, new Vector3(0f, -p.legSize.y + p.footSize.y * 0.5f, p.footSize.z * 0.15f), Vector3.zero, p.footSize, weaponDarkMat);
-        LowPolyKit.CreateBlock("FootR", rig.legRHinge, new Vector3(0f, -p.legSize.y + p.footSize.y * 0.5f, p.footSize.z * 0.15f), Vector3.zero, p.footSize, weaponDarkMat);
+        rig.legLHinge = BuildLeg("LegL", rig.hips, -1f, p, uniformMat, weaponDarkMat, out rig.kneeL, out rig.thighL, out rig.shinL);
+        rig.legRHinge = BuildLeg("LegR", rig.hips, 1f, p, uniformMat, weaponDarkMat, out rig.kneeR, out rig.thighR, out rig.shinR);
 
         return rig;
+    }
+
+    private const float UpperArmShare = 0.47f;
+    private const float ForearmShare = 0.4f;
+    private const float HandShare = 0.13f;
+    private const float ThighShare = 0.48f;
+
+    private static Transform Pivot(string name, Transform parent, Vector3 localPos)
+    {
+        GameObject go = new GameObject(name);
+        go.transform.SetParent(parent, false);
+        go.transform.localPosition = localPos;
+        return go.transform;
+    }
+
+    // Shoulder hinge (animated) -> rounded shoulder + upper arm -> elbow pivot (fixed bend) ->
+    // forearm -> hand with a thumb on the inner side.
+    private static Transform BuildArm(string name, Transform torso, float side, BipedProportions p, Vector3 restEuler, float elbowBend, float handScale,
+        Material sleeveMat, Material skinMat, out Transform elbow, out Transform forearm, out Transform hand)
+    {
+        Vector3 a = p.armSize;
+        float upperLen = a.y * UpperArmShare;
+        float foreLen = a.y * ForearmShare;
+        float handLen = a.y * HandShare * handScale;
+
+        Transform hinge = Pivot(name, torso, new Vector3(side * p.armSpacingX, p.armY, 0f));
+        hinge.localRotation = Quaternion.Euler(restEuler);
+        LowPolyKit.CreateBlock(name + "_Shoulder", hinge, new Vector3(0f, -a.x * 0.15f, 0f), Vector3.zero, Vector3.one * a.x * 1.45f, sleeveMat, PrimitiveType.Sphere);
+        LowPolyKit.CreateBlock(name + "_Upper", hinge, new Vector3(0f, -upperLen * 0.5f, 0f), Vector3.zero, new Vector3(a.x, upperLen, a.z), sleeveMat);
+
+        elbow = Pivot(name + "_Elbow", hinge, new Vector3(0f, -upperLen, 0f));
+        elbow.localRotation = Quaternion.Euler(elbowBend, 0f, 0f);
+        LowPolyKit.CreateBlock(name + "_ElbowJoint", elbow, Vector3.zero, Vector3.zero, Vector3.one * a.x * 0.98f, sleeveMat, PrimitiveType.Sphere);
+        forearm = LowPolyKit.CreateBlock(name + "_Forearm", elbow, new Vector3(0f, -foreLen * 0.5f, 0f), Vector3.zero, new Vector3(a.x * 0.88f, foreLen, a.z * 0.88f), sleeveMat);
+
+        Vector3 palm = new Vector3(a.x * handScale, handLen, a.z * 1.25f * handScale);
+        hand = LowPolyKit.CreateBlock(name + "_Hand", elbow, new Vector3(0f, -foreLen - handLen * 0.5f, 0.01f), Vector3.zero, palm, skinMat);
+        LowPolyKit.CreateBlock(name + "_Thumb", elbow, new Vector3(-side * palm.x * 0.55f, -foreLen - handLen * 0.25f, palm.z * 0.3f), new Vector3(0f, 0f, side * 25f), new Vector3(palm.x * 0.38f, handLen * 0.6f, palm.z * 0.38f), skinMat);
+        return hinge;
+    }
+
+    // Hip hinge (animated) -> thigh -> knee pivot (animated) -> shin -> boot with a toe cap.
+    private static Transform BuildLeg(string name, Transform hips, float side, BipedProportions p, Material trouserMat, Material bootMat,
+        out Transform knee, out Transform thigh, out Transform shin)
+    {
+        Vector3 l = p.legSize;
+        Vector3 f = p.footSize;
+        float thighLen = l.y * ThighShare;
+        float shinLen = l.y - thighLen - f.y;
+
+        Transform hinge = Pivot(name, hips, new Vector3(side * p.legSpacingX, 0f, 0f));
+        thigh = LowPolyKit.CreateBlock(name + "_Thigh", hinge, new Vector3(0f, -thighLen * 0.5f, 0f), Vector3.zero, new Vector3(l.x, thighLen, l.z), trouserMat);
+
+        knee = Pivot(name + "_Knee", hinge, new Vector3(0f, -thighLen, 0f));
+        LowPolyKit.CreateBlock(name + "_KneeJoint", knee, Vector3.zero, Vector3.zero, Vector3.one * l.x * 0.95f, trouserMat, PrimitiveType.Sphere);
+        shin = LowPolyKit.CreateBlock(name + "_Shin", knee, new Vector3(0f, -shinLen * 0.5f, 0f), Vector3.zero, new Vector3(l.x * 0.86f, shinLen, l.z * 0.86f), trouserMat);
+        LowPolyKit.CreateBlock(name + "_Boot", knee, new Vector3(0f, -shinLen - f.y * 0.5f, f.z * 0.18f), Vector3.zero, f, bootMat);
+        LowPolyKit.CreateBlock(name + "_Toe", knee, new Vector3(0f, -shinLen - f.y * 0.62f, f.z * 0.58f), Vector3.zero, new Vector3(f.x * 0.94f, f.y * 0.72f, f.z * 0.22f), bootMat);
+        return hinge;
     }
 
     private static Transform BuildRifle(Transform socket, Material bodyMat, Material darkMat)
@@ -354,6 +446,8 @@ public static class CharacterFactory
         string armR = LowPolyKit.GetRelativePath(root.transform, rig.armRHinge);
         string legL = LowPolyKit.GetRelativePath(root.transform, rig.legLHinge);
         string legR = LowPolyKit.GetRelativePath(root.transform, rig.legRHinge);
+        string kneeL = LowPolyKit.GetRelativePath(root.transform, rig.kneeL);
+        string kneeR = LowPolyKit.GetRelativePath(root.transform, rig.kneeR);
 
         float hipsY = p.hipsY;
 
@@ -368,13 +462,15 @@ public static class CharacterFactory
         LowPolyAnimKit.SetEulerCurve(idle, torso, idleTimes, Constant5(new Vector3(p.torsoRestLeanX, 0f, 0f)));
         LowPolyAnimKit.SetEulerCurve(idle, legL, idleTimes, Constant5(Vector3.zero));
         LowPolyAnimKit.SetEulerCurve(idle, legR, idleTimes, Constant5(Vector3.zero));
+        LowPolyAnimKit.SetEulerCurve(idle, kneeL, idleTimes, Constant5(new Vector3(IdleKneeBend, 0f, 0f)));
+        LowPolyAnimKit.SetEulerCurve(idle, kneeR, idleTimes, Constant5(new Vector3(IdleKneeBend, 0f, 0f)));
 
-        AnimationClip primary = BuildLocomotionClip(namePrefix, primaryGait, p, hips, torso, armL, armR, legL, legR);
+        AnimationClip primary = BuildLocomotionClip(namePrefix, primaryGait, p, hips, torso, armL, armR, legL, legR, kneeL, kneeR);
 
         AnimationClip secondary = null;
         if (secondaryGait.HasValue)
         {
-            secondary = BuildLocomotionClip(namePrefix, secondaryGait.Value, p, hips, torso, armL, armR, legL, legR);
+            secondary = BuildLocomotionClip(namePrefix, secondaryGait.Value, p, hips, torso, armL, armR, legL, legR, kneeL, kneeR);
         }
 
         AnimationClip action = LowPolyAnimKit.GetOrCreateClip($"{namePrefix}_{actionParamName}", loop: false);
@@ -392,12 +488,19 @@ public static class CharacterFactory
         LowPolyAnimKit.SetPositionYCurve(death, hips, deathTimes, new[] { hipsY, hipsY * 0.5f, hipsY * 0.35f });
         LowPolyAnimKit.SetEulerCurve(death, armL, deathTimes, new[] { p.armRestEulerL, new Vector3(-30f, 0f, 0f), new Vector3(-40f, 0f, 0f) });
         LowPolyAnimKit.SetEulerCurve(death, armR, deathTimes, new[] { p.armRestEulerR, new Vector3(-20f, 0f, 0f), new Vector3(-30f, 0f, 0f) });
+        // Legs fold as the body drops.
+        LowPolyAnimKit.SetEulerCurve(death, kneeL, deathTimes, new[] { new Vector3(IdleKneeBend, 0f, 0f), new Vector3(55f, 0f, 0f), new Vector3(75f, 0f, 0f) });
+        LowPolyAnimKit.SetEulerCurve(death, kneeR, deathTimes, new[] { new Vector3(IdleKneeBend, 0f, 0f), new Vector3(45f, 0f, 0f), new Vector3(70f, 0f, 0f) });
 
         controllerWrapper = LowPolyAnimKit.BuildBipedController(
             $"{namePrefix}Animator", idle, primaryGait.stateName, primary, secondary, actionParamName, action, death, runThreshold: 1.2f);
     }
 
-    private static AnimationClip BuildLocomotionClip(string namePrefix, Gait gait, BipedProportions p, string hips, string torso, string armL, string armR, string legL, string legR)
+    private const float IdleKneeBend = 4f;
+
+    // Each knee folds as its leg swings forward through the stride (peaking mid-swing) and stays
+    // nearly straight while that foot is planted; the torso counter-twists against the arms.
+    private static AnimationClip BuildLocomotionClip(string namePrefix, Gait gait, BipedProportions p, string hips, string torso, string armL, string armR, string legL, string legR, string kneeL, string kneeR)
     {
         AnimationClip clip = LowPolyAnimKit.GetOrCreateClip($"{namePrefix}_{gait.stateName}", loop: true);
         Times5(gait.period, out float[] times);
@@ -411,7 +514,25 @@ public static class CharacterFactory
         float armSwingR = p.armRestEulerR == Vector3.zero ? gait.armSwingDeg : gait.armSwingDeg * 0.2f;
         LowPolyAnimKit.SetEulerCurve(clip, armL, times, Around(SwingX(armSwingL, true), p.armRestEulerL));
         LowPolyAnimKit.SetEulerCurve(clip, armR, times, Around(SwingX(armSwingR, false), p.armRestEulerR));
-        LowPolyAnimKit.SetEulerCurve(clip, torso, times, Constant5(new Vector3(p.torsoRestLeanX + gait.torsoLeanExtra, 0f, 0f)));
+        float lean = p.torsoRestLeanX + gait.torsoLeanExtra;
+        float twist = gait.armSwingDeg * 0.2f;
+        LowPolyAnimKit.SetEulerCurve(clip, torso, times, new[]
+        {
+            new Vector3(lean, -twist, 0f), new Vector3(lean, 0f, 0f), new Vector3(lean, twist, 0f), new Vector3(lean, 0f, 0f), new Vector3(lean, -twist, 0f),
+        });
+
+        // Left leg is back at the half-period key, so it swings forward (knee folding) in the last
+        // quarter; the right leg does the same half a stride earlier.
+        float fold = gait.legSwingDeg * 1.3f;
+        float planted = IdleKneeBend;
+        LowPolyAnimKit.SetEulerCurve(clip, kneeL, times, new[]
+        {
+            new Vector3(planted, 0f, 0f), new Vector3(planted, 0f, 0f), new Vector3(fold * 0.3f, 0f, 0f), new Vector3(fold, 0f, 0f), new Vector3(planted, 0f, 0f),
+        });
+        LowPolyAnimKit.SetEulerCurve(clip, kneeR, times, new[]
+        {
+            new Vector3(fold * 0.3f, 0f, 0f), new Vector3(fold, 0f, 0f), new Vector3(planted, 0f, 0f), new Vector3(planted, 0f, 0f), new Vector3(fold * 0.3f, 0f, 0f),
+        });
 
         return clip;
     }
@@ -440,7 +561,9 @@ public static class CharacterFactory
         LowPolyAnimKit.SetEulerCurve(idle, legR, idleTimes, Constant5(Vector3.zero));
 
         var walkGait = new Gait { stateName = "Walk", period = 1.1f, legSwingDeg = 16f, armSwingDeg = 10f, hipsBob = 0.25f, torsoLeanExtra = 0f };
-        AnimationClip walk = BuildLocomotionClip("Boss", walkGait, p, hips, torso, armL, armR, legL, legR);
+        string kneeL = LowPolyKit.GetRelativePath(root.transform, rig.kneeL);
+        string kneeR = LowPolyKit.GetRelativePath(root.transform, rig.kneeR);
+        AnimationClip walk = BuildLocomotionClip("Boss", walkGait, p, hips, torso, armL, armR, legL, legR, kneeL, kneeR);
 
         AnimationClip attack = LowPolyAnimKit.GetOrCreateClip("Boss_Attack", loop: false);
         float[] attackTimes = { 0f, 0.1f, 0.3f, 0.55f };

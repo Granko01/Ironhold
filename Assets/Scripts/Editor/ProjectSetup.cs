@@ -20,14 +20,14 @@ public static class ProjectSetup
 
     private static readonly string[] GeneratedSceneObjectNames =
     {
-        "Ground", "Core", "Player", "GameManager", "EnemySpawner", "TowerPlacer", "PlacementGrid", "EventSystem", "UICanvas", "EnvironmentDecor", "Arena", "PostFX", "Directional Light", "Squad", "LootSpawner", "BaseWalls"
+        "Ground", "Core", "Player", "GameManager", "EnemySpawner", "TowerPlacer", "PlacementGrid", "EventSystem", "UICanvas", "EnvironmentDecor", "Arena", "PostFX", "Directional Light", "Squad", "LootSpawner", "BaseWalls", "Village"
     };
 
     private const string PostFxProfilePath = "Assets/Settings/GameplayPostFX.asset";
 
     // The starting fort: a square ring of wall blocks this many grid cells out from the core,
     // leaving room inside for towers.
-    private const int BaseWallRingCells = 4;
+    private const int BaseWallRingCells = 6;
 
     // Shared by the arena fog and the camera clear colour so the world fades into the background.
     private static readonly Color HorizonColor = new Color(0.56f, 0.74f, 0.66f);
@@ -138,13 +138,16 @@ public static class ProjectSetup
         Projectile missileProjectile = GetOrCreateProjectilePrefab("ProjectileMissile", 0.4f, new Color(0.95f, 0.95f, 0.95f));
         Projectile sniperProjectile = GetOrCreateProjectilePrefab("ProjectileSniperRound", 0.22f, new Color(0.85f, 1f, 0.5f));
 
-        ConfigureProjectileBehavior(bulletProjectile, speed: 20f, lifetime: 3f, fxColor: new Color(1f, 0.85f, 0.2f), glow: 2.5f);
-        ConfigureProjectileBehavior(cannonBallProjectile, speed: 14f, lifetime: 3f, fxColor: new Color(1f, 0.55f, 0.15f), glow: 2f, splashRadius: 2.5f);
-        ConfigureProjectileBehavior(sniperProjectile, speed: 45f, lifetime: 1.5f, fxColor: new Color(0.85f, 1f, 0.5f), glow: 3f, pierceCount: 3);
-        ConfigureProjectileBehavior(teslaBoltProjectile, speed: 30f, lifetime: 2f, fxColor: new Color(0.4f, 0.85f, 1f), glow: 3f, chainCount: 4, chainRange: 4.5f);
+        // Bullets are fast, thin tracers (hits are swept along their path, so speed is safe).
+        ConfigureProjectileBehavior(bulletProjectile, speed: 75f, lifetime: 0.5f, fxColor: new Color(1f, 0.8f, 0.35f), glow: 4f, bullet: true);
+        StyleAsTracer(bulletProjectile, length: 0.75f, width: 0.05f);
+        ConfigureProjectileBehavior(cannonBallProjectile, speed: 22f, lifetime: 2f, fxColor: new Color(1f, 0.55f, 0.15f), glow: 2f, splashRadius: 2.5f);
+        ConfigureProjectileBehavior(sniperProjectile, speed: 120f, lifetime: 0.35f, fxColor: new Color(0.85f, 1f, 0.6f), glow: 5f, pierceCount: 3, bullet: true);
+        StyleAsTracer(sniperProjectile, length: 1.3f, width: 0.06f);
+        ConfigureProjectileBehavior(teslaBoltProjectile, speed: 45f, lifetime: 1.2f, fxColor: new Color(0.4f, 0.85f, 1f), glow: 3f, chainCount: 4, chainRange: 4.5f);
         ConfigureProjectileBehavior(missileProjectile, speed: 12f, lifetime: 5f, fxColor: new Color(1f, 0.45f, 0.1f), glow: 2.5f, homing: true, splashRadius: 2f);
         Projectile arrowProjectile = GetOrCreateArrowPrefab();
-        ConfigureProjectileBehavior(arrowProjectile, speed: 28f, lifetime: 1.5f, fxColor: new Color(1f, 0.95f, 0.75f), glow: 1f, pierceCount: 2);
+        ConfigureProjectileBehavior(arrowProjectile, speed: 38f, lifetime: 1.2f, fxColor: new Color(1f, 0.95f, 0.75f), glow: 1f, pierceCount: 2);
         Enemy enemyPrefab = GetOrCreateEnemyPrefab();
         Enemy runnerPrefab = GetOrCreateRunnerPrefab();
         Enemy brutePrefab = GetOrCreateBrutePrefab();
@@ -259,6 +262,7 @@ public static class ProjectSetup
         // Outposts were tried and dropped; clear any left in scenes built with them.
         DestroyIfExists("Outposts");
         BuildBaseWalls(wallPrefab, gatePrefab, watchtowerPrefab, grid, player.transform);
+        BuildVillage(GetOrCreateHousePrefabs(), grid);
 
         GameObject lootGo = FindOrCreateEmpty("LootSpawner");
         LowPolyKit.GetOrAddComponent<LootCacheSpawner>(lootGo).Configure(lootCachePrefab, player.transform, enemySpawner);
@@ -279,6 +283,251 @@ public static class ProjectSetup
 
         EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
         Debug.Log("Prototype scene built. Press Play to test. Remember to save the scene (Ctrl+S).");
+    }
+
+    private const string TrailerScenePath = "Assets/Scenes/Trailer.unity";
+
+    // Where the wall block breaks in the trailer (south wall, just east of the gate); the soldier
+    // ambush happens just inside it. Must match TrailerDirector's staging.
+    private static readonly Vector3 TrailerBreachPoint = new Vector3(4.5f, 0f, -16.5f);
+
+    // A self-playing ~30s vertical trailer for TikTok/Reels/Shorts, staged with the real game
+    // prefabs. Press Play in this scene (Game view at 1080x1920) and record it with Unity Recorder.
+    [MenuItem("Tools/Iron Hold/4) Build Trailer Scene")]
+    public static void BuildTrailerScene()
+    {
+        T Load<T>(string name) where T : Object => AssetDatabase.LoadAssetAtPath<GameObject>($"{PrefabFolder}/{name}.prefab")?.GetComponent<T>();
+
+        string[] required = { "Core", "Player", "Wall", "Gate", "Watchtower", "Enemy", "Boss", "House", "HouseAlt" };
+        foreach (string name in required)
+        {
+            if (string.IsNullOrEmpty(AssetDatabase.AssetPathToGUID($"{PrefabFolder}/{name}.prefab")))
+            {
+                EditorUtility.DisplayDialog("Iron Hold", "Prefabs are missing. Run 'Tools > Iron Hold > 2) Build Prototype Scene' first, then build the trailer.", "OK");
+                return;
+            }
+        }
+        if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
+
+        EnsureFolder(SceneFolder);
+        Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+
+        // Loaded only after the new scene exists: opening a scene unloads unused assets, which
+        // would leave references fetched earlier pointing at destroyed prefabs.
+        Transform corePrefab = Load<Transform>("Core");
+        Transform playerPrefab = Load<Transform>("Player");
+        Wall wallPrefab = Load<Wall>("Wall");
+        Gate gatePrefab = Load<Gate>("Gate");
+        Watchtower watchtowerPrefab = Load<Watchtower>("Watchtower");
+        Enemy walker = Load<Enemy>("Enemy");
+        Enemy boss = Load<Enemy>("Boss");
+
+        GameObject cameraGo = new GameObject("Main Camera", typeof(Camera), typeof(AudioListener));
+        cameraGo.tag = "MainCamera";
+        Camera cam = cameraGo.GetComponent<Camera>();
+        cam.fieldOfView = 50f;
+
+        BuildArena();
+        ConfigureLightingAndAtmosphere();
+        UnityEngine.Rendering.Volume postFx = ApplyTrailerLook(cam);
+
+        GameObject fxGo = new GameObject("GameFx");
+        SetPrivateField(fxGo.AddComponent<GameFx>(), "particleMaterial", GetOrCreateParticleMaterial());
+
+        PlacementGrid grid = new GameObject("PlacementGrid").AddComponent<PlacementGrid>();
+
+        var core = (GameObject)PrefabUtility.InstantiatePrefab(corePrefab.gameObject);
+        core.name = "Core";
+        core.transform.position = new Vector3(0f, 1f, 0f);
+
+        // The director drives the hero; player input stays off.
+        var hero = (GameObject)PrefabUtility.InstantiatePrefab(playerPrefab.gameObject);
+        hero.name = "Player";
+        hero.transform.SetPositionAndRotation(new Vector3(0f, 0f, -2f), Quaternion.Euler(0f, 180f, 0f));
+        hero.GetComponent<PlayerController>().enabled = false;
+
+        BuildBaseWalls(wallPrefab, gatePrefab, watchtowerPrefab, grid, hero.transform);
+        BuildVillage(new[] { Load<Wall>("House"), Load<Wall>("HouseAlt") }, grid);
+
+        // The block that breaks on cue in the wall shot: south wall, just east of the gate.
+        Wall breakable = null;
+        float bestDistance = float.MaxValue;
+        foreach (Wall wall in Object.FindObjectsByType<Wall>())
+        {
+            if (wall.GetComponent<Gate>() != null || wall.GetComponent<Watchtower>() != null) continue;
+            float distance = Vector3.Distance(wall.transform.position, TrailerBreachPoint);
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                breakable = wall;
+            }
+        }
+
+        // A tower line behind the south wall, where the horde attacks.
+        (string prefab, Vector3 position)[] towers =
+        {
+            ("TowerCannon", new Vector3(-10.5f, 0f, -13.5f)),
+            ("TowerTesla", new Vector3(-7.5f, 0f, -13.5f)),
+            ("TowerGun", new Vector3(-4.5f, 0f, -13.5f)),
+            ("TowerSniper", new Vector3(-7.5f, 0f, -10.5f)),
+            ("TowerMissile", new Vector3(-13.5f, 0f, -10.5f)),
+        };
+        Transform towerParent = new GameObject("Towers").transform;
+        foreach ((string prefab, Vector3 position) in towers)
+        {
+            Tower tower = Load<Tower>(prefab);
+            if (tower == null) continue;
+            var go = (GameObject)PrefabUtility.InstantiatePrefab(tower.gameObject);
+            go.transform.SetParent(towerParent, false);
+            go.transform.position = position;
+        }
+
+        TrailerUi ui = BuildTrailerUi();
+
+        TrailerDirector director = new GameObject("TrailerDirector").AddComponent<TrailerDirector>();
+        director.Configure(cam, core.transform, hero.transform, breakable, postFx,
+            walker, Load<Enemy>("EnemyRunner"), Load<Enemy>("EnemyBrute"), Load<Enemy>("EnemySpitter"), Load<Enemy>("EnemyBomber"), boss,
+            Load<Soldier>("Soldier"), Load<DogCompanion>("Dog"),
+            ui.fade, ui.flash, ui.caption, ui.title, ui.subtitle, ui.callToAction);
+
+        // Opening frame of the first shot, so the Scene/Game view preview matches the start.
+        cam.transform.SetPositionAndRotation(new Vector3(-6.5f, 1.1f, -32.5f), Quaternion.LookRotation(new Vector3(-3f, 0.9f, -28f) - new Vector3(-6.5f, 1.1f, -32.5f)));
+
+        EditorSceneManager.SaveScene(scene, TrailerScenePath);
+        Debug.Log($"Trailer scene saved to {TrailerScenePath}. Set the Game view to 1080x1920, then press Play (or record with Window > General > Recorder).");
+    }
+
+    private const string TrailerPostFxProfilePath = "Assets/Settings/TrailerPostFX.asset";
+
+    // Dusk and a film grade for the trailer only: low orange back-light with long shadows toward
+    // the camera, blue-violet ambient and fog (so torches, eyes and muzzle flashes pop), plus
+    // teal/orange split toning, grain, slight fringing and depth of field the director pulls per shot.
+    // No motion blur: the trailer hard-cuts between shots, and camera blur smears the frame on a cut.
+    private static UnityEngine.Rendering.Volume ApplyTrailerLook(Camera cam)
+    {
+        Color dusk = new Color(0.3f, 0.27f, 0.36f);
+
+        Light sun = Object.FindAnyObjectByType<Light>();
+        if (sun != null && sun.type == LightType.Directional)
+        {
+            sun.transform.rotation = Quaternion.Euler(16f, 160f, 0f);
+            sun.color = new Color(1f, 0.58f, 0.32f);
+            sun.intensity = 1.25f;
+            sun.shadowStrength = 0.75f;
+        }
+
+        RenderSettings.ambientSkyColor = new Color(0.32f, 0.36f, 0.55f);
+        RenderSettings.ambientEquatorColor = new Color(0.3f, 0.27f, 0.32f);
+        RenderSettings.ambientGroundColor = new Color(0.12f, 0.1f, 0.09f);
+        RenderSettings.fogColor = dusk;
+        RenderSettings.fogStartDistance = 22f;
+        RenderSettings.fogEndDistance = 70f;
+        cam.backgroundColor = dusk;
+
+        var profile = AssetDatabase.LoadAssetAtPath<UnityEngine.Rendering.VolumeProfile>(TrailerPostFxProfilePath);
+        if (profile == null)
+        {
+            profile = ScriptableObject.CreateInstance<UnityEngine.Rendering.VolumeProfile>();
+            AssetDatabase.CreateAsset(profile, TrailerPostFxProfilePath);
+        }
+
+        Bloom bloom = GetOrAddVolumeOverride<Bloom>(profile);
+        bloom.threshold.Override(0.9f);
+        bloom.intensity.Override(1.4f);
+        bloom.scatter.Override(0.7f);
+
+        GetOrAddVolumeOverride<Tonemapping>(profile).mode.Override(TonemappingMode.ACES);
+
+        ColorAdjustments color = GetOrAddVolumeOverride<ColorAdjustments>(profile);
+        color.postExposure.Override(0.25f);
+        color.contrast.Override(26f);
+        color.saturation.Override(8f);
+
+        SplitToning toning = GetOrAddVolumeOverride<SplitToning>(profile);
+        toning.shadows.Override(new Color(0.2f, 0.45f, 0.55f));
+        toning.highlights.Override(new Color(1f, 0.7f, 0.42f));
+        toning.balance.Override(-15f);
+
+        Vignette vignette = GetOrAddVolumeOverride<Vignette>(profile);
+        vignette.intensity.Override(0.42f);
+        vignette.smoothness.Override(0.5f);
+
+        FilmGrain grain = GetOrAddVolumeOverride<FilmGrain>(profile);
+        grain.type.Override(FilmGrainLookup.Medium2);
+        grain.intensity.Override(0.3f);
+        grain.response.Override(0.8f);
+
+        GetOrAddVolumeOverride<ChromaticAberration>(profile).intensity.Override(0.15f);
+
+        DepthOfField dof = GetOrAddVolumeOverride<DepthOfField>(profile);
+        dof.mode.Override(DepthOfFieldMode.Bokeh);
+        dof.focusDistance.Override(10f);
+        dof.focalLength.Override(50f);
+        dof.aperture.Override(5.6f);
+
+        foreach (UnityEngine.Rendering.VolumeComponent component in profile.components) EditorUtility.SetDirty(component);
+        EditorUtility.SetDirty(profile);
+        AssetDatabase.SaveAssets();
+
+        GameObject postFxGo = GameObject.Find("PostFX");
+        var volume = postFxGo != null ? postFxGo.GetComponent<UnityEngine.Rendering.Volume>() : new GameObject("PostFX").AddComponent<UnityEngine.Rendering.Volume>();
+        volume.isGlobal = true;
+        volume.sharedProfile = profile;
+        return volume;
+    }
+
+    private struct TrailerUi
+    {
+        public Image fade;
+        public Image flash;
+        public Text caption;
+        public Text title;
+        public Text subtitle;
+        public Text callToAction;
+    }
+
+    private static TrailerUi BuildTrailerUi()
+    {
+        Transform canvas = EnsureCanvas();
+        Vector2 center = new Vector2(0.5f, 0.5f);
+        var ui = new TrailerUi();
+
+        RectTransform flash = CreateRect("Flash", canvas, Vector2.zero, Vector2.one, center, Vector2.zero, Vector2.zero);
+        ui.flash = AddImage(flash, new Color(1f, 0.95f, 0.85f, 0f));
+
+        // Widescreen bars: a film frame inside the 9:16 video.
+        const float barHeight = 150f;
+        AddImage(CreateRect("LetterboxTop", canvas, new Vector2(0f, 1f), Vector2.one, new Vector2(0.5f, 1f), Vector2.zero, new Vector2(0f, barHeight)), Color.black);
+        AddImage(CreateRect("LetterboxBottom", canvas, Vector2.zero, new Vector2(1f, 0f), new Vector2(0.5f, 0f), Vector2.zero, new Vector2(0f, barHeight)), Color.black);
+
+        RectTransform fade = CreateRect("Fade", canvas, Vector2.zero, Vector2.one, center, Vector2.zero, Vector2.zero);
+        ui.fade = AddImage(fade, Color.black);
+
+        // Upper-middle of the frame: TikTok/Reels cover the bottom fifth and the right edge with UI.
+        ui.caption = CreateTrailerText(canvas, "Caption", 112, Color.white, new Vector2(0f, 420f));
+        ui.title = CreateTrailerText(canvas, "Title", 190, ScrapGold, new Vector2(0f, 260f));
+        ui.title.text = "IRON HOLD";
+        ui.subtitle = CreateTrailerText(canvas, "Subtitle", 88, Color.white, new Vector2(0f, 110f));
+        ui.subtitle.text = "LAST STAND";
+        ui.callToAction = CreateTrailerText(canvas, "CallToAction", 60, new Color(1f, 0.92f, 0.5f), new Vector2(0f, -120f));
+        ui.callToAction.text = "COMING SOON TO MOBILE";
+        return ui;
+    }
+
+    private static Text CreateTrailerText(Transform canvas, string name, int size, Color color, Vector2 position)
+    {
+        Vector2 center = new Vector2(0.5f, 0.5f);
+        Text text = CreateText(canvas, name, "", size, color, TextAnchor.MiddleCenter, center, position, new Vector2(1000f, size * 2.6f));
+        text.fontStyle = FontStyle.Bold;
+        text.lineSpacing = 0.9f;
+        // Heavy outline + drop shadow so captions read over any frame.
+        Outline outline = text.gameObject.AddComponent<Outline>();
+        outline.effectColor = new Color(0f, 0f, 0f, 0.85f);
+        outline.effectDistance = new Vector2(5f, -5f);
+        Shadow shadow = text.gameObject.AddComponent<Shadow>();
+        shadow.effectColor = new Color(0f, 0f, 0f, 0.6f);
+        shadow.effectDistance = new Vector2(0f, -10f);
+        return text;
     }
 
     [MenuItem("Tools/Iron Hold/3) Build Main Menu Scene")]
@@ -397,9 +646,9 @@ public static class ProjectSetup
         go.name = "Enemy";
 
         CapsuleCollider collider = LowPolyKit.GetOrAddComponent<CapsuleCollider>(go);
-        collider.center = new Vector3(0f, 0.92f, 0f);
-        collider.radius = 0.4f;
-        collider.height = 1.85f;
+        collider.center = new Vector3(0f, 0.98f, 0f);
+        collider.radius = 0.35f;
+        collider.height = 1.96f;
 
         Health health = LowPolyKit.GetOrAddComponent<Health>(go);
         health.Configure(30f);
@@ -450,7 +699,7 @@ public static class ProjectSetup
         Transform torso = rig.torso;
         Vector3 t = p.torsoSize;
         Vector3 h = p.headSize;
-        float headCenterY = t.y * 0.5f + h.y * 0.5f - 0.02f;
+        float headCenterY = CharacterFactory.HeadCenterY(p);
         float headFront = h.z * 0.5f + 0.006f;
         float front = t.z * 0.5f + 0.006f;
 
@@ -468,16 +717,17 @@ public static class ProjectSetup
         LowPolyKit.CreateBlock("BloodDrip", torso, new Vector3(-t.x * 0.26f, t.y * 0.02f, front), Vector3.zero, new Vector3(t.x * 0.07f, t.y * 0.2f, 0.02f), bloodMat);
         LowPolyKit.CreateBlock("BloodBack", torso, new Vector3(t.x * 0.15f, 0f, -front), Vector3.zero, new Vector3(t.x * 0.3f, t.y * 0.25f, 0.02f), bloodMat);
 
-        // Sleeves torn off at the elbow: the lower half of each arm is bare skin.
-        Vector3 forearm = new Vector3(p.armSize.x * 1.04f, p.armSize.y * 0.5f, p.armSize.z * 1.04f);
-        LowPolyKit.CreateBlock("ForearmL", rig.armLHinge, new Vector3(0f, -p.armSize.y * 0.75f, 0f), Vector3.zero, forearm, skinMat);
-        LowPolyKit.CreateBlock("ForearmR", rig.armRHinge, new Vector3(0f, -p.armSize.y * 0.75f, 0f), Vector3.zero, forearm, skinMat);
+        // Sleeves torn off at the elbow (bare forearms) and jeans, with one leg ripped off at the knee.
+        Recolor(skinMat, rig.forearmL, rig.forearmR, rig.shinR);
+        Recolor(pantsMat, rig.pelvis, rig.thighL, rig.thighR, rig.shinL);
+    }
 
-        // Jeans over the legs, one leg ripped short.
-        Vector3 pantsSize = new Vector3(p.legSize.x * 1.05f, p.legSize.y * 0.82f, p.legSize.z * 1.05f);
-        LowPolyKit.CreateBlock("PantsL", rig.legLHinge, new Vector3(0f, -pantsSize.y * 0.5f, 0f), Vector3.zero, pantsSize, pantsMat);
-        LowPolyKit.CreateBlock("PantsR", rig.legRHinge, new Vector3(0f, -pantsSize.y * 0.32f, 0f), Vector3.zero, new Vector3(pantsSize.x, pantsSize.y * 0.64f, pantsSize.z), pantsMat);
-        LowPolyKit.CreateBlock("PelvisPants", rig.hips, new Vector3(0f, p.pelvisSize.y * 0.5f, 0f), Vector3.zero, p.pelvisSize * 1.04f, pantsMat);
+    private static void Recolor(Material material, params Transform[] parts)
+    {
+        foreach (Transform part in parts)
+        {
+            if (part != null && part.TryGetComponent(out Renderer renderer)) renderer.sharedMaterial = material;
+        }
     }
 
     private static Enemy GetOrCreateRunnerPrefab()
@@ -489,9 +739,9 @@ public static class ProjectSetup
         go.name = "EnemyRunner";
 
         CapsuleCollider collider = LowPolyKit.GetOrAddComponent<CapsuleCollider>(go);
-        collider.center = new Vector3(0f, 0.74f, 0f);
+        collider.center = new Vector3(0f, 0.85f, 0f);
         collider.radius = 0.28f;
-        collider.height = 1.48f;
+        collider.height = 1.7f;
 
         Health health = LowPolyKit.GetOrAddComponent<Health>(go);
         health.Configure(16f);
@@ -615,9 +865,9 @@ public static class ProjectSetup
         go.name = "EnemySpitter";
 
         CapsuleCollider collider = LowPolyKit.GetOrAddComponent<CapsuleCollider>(go);
-        collider.center = new Vector3(0f, 0.85f, 0f);
+        collider.center = new Vector3(0f, 0.92f, 0f);
         collider.radius = 0.36f;
-        collider.height = 1.7f;
+        collider.height = 1.84f;
 
         Health health = LowPolyKit.GetOrAddComponent<Health>(go);
         health.Configure(40f);
@@ -646,7 +896,7 @@ public static class ProjectSetup
         // Glowing acid: the sac on its back and a drip hanging from the mouth.
         Material spitterAccentMat = GetOrCreateMaterial("SpitterAccent", new Color(0.5f, 1.8f, 0.3f), unlit: true);
         float torsoHalfDepth = p.torsoSize.z * 0.5f;
-        float headCenterY = p.torsoSize.y * 0.5f + p.headSize.y * 0.5f - 0.02f;
+        float headCenterY = CharacterFactory.HeadCenterY(p);
         LowPolyKit.CreateBlock("Drool", rig.torso, new Vector3(0.02f, headCenterY - p.headSize.y * 0.5f - 0.05f, p.headSize.z * 0.5f), Vector3.zero, new Vector3(0.05f, 0.14f, 0.05f), spitterAccentMat);
         LowPolyKit.CreateBlock("Sac", rig.torso, new Vector3(0f, 0.06f, -torsoHalfDepth - 0.1f), Vector3.zero, new Vector3(0.34f, 0.32f, 0.28f), spitterAccentMat, PrimitiveType.Sphere);
         LowPolyKit.CreateBlock("SacRidge", rig.torso, new Vector3(0f, 0.3f, -torsoHalfDepth - 0.02f), Vector3.zero, new Vector3(0.1f, 0.14f, 0.12f), spitterAccentMat);
@@ -681,9 +931,9 @@ public static class ProjectSetup
         go.name = "EnemyBomber";
 
         CapsuleCollider collider = LowPolyKit.GetOrAddComponent<CapsuleCollider>(go);
-        collider.center = new Vector3(0f, 0.87f, 0f);
+        collider.center = new Vector3(0f, 0.95f, 0f);
         collider.radius = 0.38f;
-        collider.height = 1.74f;
+        collider.height = 1.9f;
 
         Health health = LowPolyKit.GetOrAddComponent<Health>(go);
         health.Configure(25f);
@@ -757,9 +1007,9 @@ public static class ProjectSetup
         go.name = "EnemyEngineer";
 
         CapsuleCollider collider = LowPolyKit.GetOrAddComponent<CapsuleCollider>(go);
-        collider.center = new Vector3(0f, 0.89f, 0f);
+        collider.center = new Vector3(0f, 0.98f, 0f);
         collider.radius = 0.34f;
-        collider.height = 1.78f;
+        collider.height = 1.96f;
 
         Health health = LowPolyKit.GetOrAddComponent<Health>(go);
         health.Configure(35f);
@@ -784,11 +1034,6 @@ public static class ProjectSetup
         AddZombieDetails(rig, p, "Engineer", colors.skin, new Color(0.22f, 0.26f, 0.36f), new Color(2.4f, 2f, 0.3f));
         ConfigureEnemyFeedback(enemy, colors.accent, 14, 0f, 0f);
         AddTeamRing(go.transform, 0.6f, EnemyRingColor);
-
-        // hasWeapon: false gives the right hand a generic "Fist" block - replace it with
-        // the tool below instead of layering the tool on top of it.
-        Transform autoFist = rig.weaponSocket.Find("Fist");
-        if (autoFist != null) Object.DestroyImmediate(autoFist.gameObject);
 
         Material engineerTankMat = GetOrCreateMaterial("EngineerTank", new Color(0.3f, 0.3f, 0.32f), unlit: false);
         Material engineerAccentMat = GetOrCreateMaterial("EngineerAccent", new Color(0.95f, 0.6f, 0.1f), unlit: true);
@@ -933,12 +1178,11 @@ public static class ProjectSetup
         // A glowing wound where the old chest light was.
         LowPolyKit.CreateBlock("CoreLight", rig.torso, new Vector3(0f, 0.3f, bp.torsoSize.z * 0.5f + 0.02f), Vector3.zero, new Vector3(0.4f, 0.4f, 0.08f), bossAccentMat);
 
-        float fistSize = bp.armSize.x * 1.5f;
-        LowPolyKit.CreateBlock("KnuckleGlow", rig.weaponSocket, new Vector3(0f, 0f, fistSize * 0.4f), Vector3.zero, new Vector3(fistSize * 0.5f, fistSize * 0.5f, 0.04f), bossAccentMat);
-        Transform handSocketL = rig.armLHinge.Find("HandSocketL");
-        if (handSocketL != null)
+        // Glowing knuckles on the front of each fist.
+        foreach (Transform hand in new[] { rig.handL, rig.handR })
         {
-            LowPolyKit.CreateBlock("KnuckleGlow", handSocketL, new Vector3(0f, 0f, fistSize * 0.4f), Vector3.zero, new Vector3(fistSize * 0.5f, fistSize * 0.5f, 0.04f), bossAccentMat);
+            Vector3 knuckle = hand.localPosition + new Vector3(0f, -hand.localScale.y * 0.2f, hand.localScale.z * 0.5f + 0.02f);
+            LowPolyKit.CreateBlock("KnuckleGlow", hand.parent, knuckle, Vector3.zero, new Vector3(hand.localScale.x * 0.8f, hand.localScale.y * 0.35f, 0.05f), bossAccentMat);
         }
 
         LowPolyKit.CreateBlock("LegStripeL", rig.legLHinge, new Vector3(0f, -bp.legSize.y * 0.5f, bp.legSize.z * 0.5f + 0.01f), Vector3.zero, new Vector3(bp.legSize.x * 0.3f, bp.legSize.y * 0.6f, 0.04f), bossAccentMat);
@@ -1204,11 +1448,11 @@ public static class ProjectSetup
         AddHeroGear(rig, proportions, colors);
 
         // Chunkier than an enemy grunt's rifle so the hero's weapon reads at phone size.
-        rig.rifle.localScale = Vector3.one * 1.75f;
+        rig.rifle.localScale = Vector3.one * 1.4f;
 
         GameObject bow = new GameObject("Bow");
         bow.transform.SetParent(rig.weaponSocket, false);
-        bow.transform.localScale = Vector3.one * 1.5f;
+        bow.transform.localScale = Vector3.one * 1.1f;
         CharacterFactory.BuildBow(bow.transform,
             GetOrCreateMaterial("PlayerBowWood", new Color(0.5f, 0.32f, 0.16f), unlit: false),
             GetOrCreateMaterial("PlayerBowString", new Color(0.92f, 0.9f, 0.82f), unlit: true),
@@ -1231,7 +1475,9 @@ public static class ProjectSetup
         firePoint.transform.SetParent(go.transform, false);
         firePoint.transform.localPosition = go.transform.InverseTransformPoint(rig.muzzle.position);
 
-        LowPolyKit.GetOrAddComponent<FirstPersonView>(go).Configure(new[] { rig.armLHinge, rig.armRHinge });
+        // Eye just inside the front of the head, a touch below its centre.
+        Vector3 eye = rig.torso.localPosition + rig.hips.localPosition + new Vector3(0f, CharacterFactory.HeadCenterY(proportions) - 0.01f, proportions.headSize.z * 0.3f);
+        LowPolyKit.GetOrAddComponent<FirstPersonView>(go).Configure(new[] { rig.armLHinge, rig.armRHinge }, eye);
 
         PlayerShooter shooter = LowPolyKit.GetOrAddComponent<PlayerShooter>(go);
         shooter.Configure(new[]
@@ -1264,7 +1510,7 @@ public static class ProjectSetup
         Transform torso = rig.torso;
         float halfTorsoY = p.torsoSize.y * 0.5f;
         float halfTorsoZ = p.torsoSize.z * 0.5f;
-        float headCenterY = halfTorsoY + p.headSize.y * 0.5f - 0.02f;
+        float headCenterY = CharacterFactory.HeadCenterY(p);
         float headFrontZ = p.headSize.z * 0.5f;
 
         Vector3 h = p.headSize;
@@ -1273,12 +1519,14 @@ public static class ProjectSetup
         LowPolyKit.CreateBlock("EyeR", torso, new Vector3(h.x * 0.21f, headCenterY + h.y * 0.03f, headFrontZ + 0.005f), Vector3.zero, eyeSize, eyeMat);
         LowPolyKit.CreateBlock("Visor", torso, new Vector3(0f, headCenterY + h.y * 0.42f, headFrontZ + 0.03f), new Vector3(-12f, 0f, 0f), new Vector3(h.x * 1.05f, 0.06f, 0.1f), visorMat);
 
-        LowPolyKit.CreateBlock("Backpack", torso, new Vector3(0f, 0.02f, -halfTorsoZ - 0.1f), Vector3.zero, new Vector3(0.44f, 0.48f, 0.2f), gearMat);
-        LowPolyKit.CreateBlock("Bedroll", torso, new Vector3(0f, 0.3f, -halfTorsoZ - 0.12f), new Vector3(0f, 0f, 90f), new Vector3(0.14f, 0.26f, 0.14f), strapMat, PrimitiveType.Cylinder);
-        LowPolyKit.CreateBlock("Strap", torso, new Vector3(0f, 0.04f, halfTorsoZ + 0.055f), new Vector3(0f, 0f, 40f), new Vector3(0.08f, 0.82f, 0.02f), strapMat);
+        Vector3 t = p.torsoSize;
+        LowPolyKit.CreateBlock("Backpack", torso, new Vector3(0f, t.y * 0.05f, -halfTorsoZ - 0.09f), Vector3.zero, new Vector3(t.x * 0.76f, t.y * 0.7f, 0.18f), gearMat);
+        LowPolyKit.CreateBlock("Bedroll", torso, new Vector3(0f, t.y * 0.45f, -halfTorsoZ - 0.11f), new Vector3(0f, 0f, 90f), new Vector3(0.12f, t.x * 0.42f, 0.12f), strapMat, PrimitiveType.Cylinder);
+        LowPolyKit.CreateBlock("Strap", torso, new Vector3(0f, t.y * 0.05f, halfTorsoZ + 0.055f), new Vector3(0f, 0f, 40f), new Vector3(0.07f, t.y * 1.25f, 0.02f), strapMat);
 
-        LowPolyKit.CreateBlock("PadL", torso, new Vector3(-p.armSpacingX, p.armY + 0.06f, 0f), new Vector3(0f, 0f, 12f), new Vector3(0.28f, 0.12f, 0.3f), padMat);
-        LowPolyKit.CreateBlock("PadR", torso, new Vector3(p.armSpacingX, p.armY + 0.06f, 0f), new Vector3(0f, 0f, -12f), new Vector3(0.28f, 0.12f, 0.3f), padMat);
+        Vector3 pad = new Vector3(p.armSize.x * 2.1f, 0.09f, p.armSize.z * 2.3f);
+        LowPolyKit.CreateBlock("PadL", torso, new Vector3(-p.armSpacingX, p.armY + 0.08f, 0f), new Vector3(0f, 0f, 14f), pad, padMat);
+        LowPolyKit.CreateBlock("PadR", torso, new Vector3(p.armSpacingX, p.armY + 0.08f, 0f), new Vector3(0f, 0f, -14f), pad, padMat);
 
         LowPolyKit.CreateBlock("Belt", rig.hips, new Vector3(0f, p.pelvisSize.y + 0.02f, 0f), Vector3.zero, new Vector3(p.pelvisSize.x + 0.06f, 0.09f, p.pelvisSize.z + 0.06f), strapMat);
         LowPolyKit.CreateBlock("Pouch", rig.hips, new Vector3(0.2f, p.pelvisSize.y - 0.04f, p.pelvisSize.z * 0.5f + 0.05f), Vector3.zero, new Vector3(0.12f, 0.12f, 0.08f), gearMat);
@@ -1292,11 +1540,11 @@ public static class ProjectSetup
         }
         LowPolyKit.CreateBlock("Collar", torso, new Vector3(0f, halfTorsoY - 0.02f, 0f), Vector3.zero, new Vector3(p.torsoSize.x * 0.62f, 0.08f, p.torsoSize.z * 1.08f), vestMat);
 
-        Vector3 kneePad = new Vector3(p.legSize.x * 1.15f, 0.13f, 0.07f);
-        float kneeY = -p.legSize.y * 0.48f;
-        float kneeZ = p.legSize.z * 0.5f + 0.02f;
-        LowPolyKit.CreateBlock("KneePadL", rig.legLHinge, new Vector3(0f, kneeY, kneeZ), Vector3.zero, kneePad, padMat);
-        LowPolyKit.CreateBlock("KneePadR", rig.legRHinge, new Vector3(0f, kneeY, kneeZ), Vector3.zero, kneePad, padMat);
+        // On the knee pivots, so they stay on the knee as it bends.
+        Vector3 kneePad = new Vector3(p.legSize.x * 1.15f, 0.12f, 0.06f);
+        Vector3 kneePadPos = new Vector3(0f, -0.02f, p.legSize.z * 0.5f + 0.02f);
+        LowPolyKit.CreateBlock("KneePadL", rig.kneeL, kneePadPos, Vector3.zero, kneePad, padMat);
+        LowPolyKit.CreateBlock("KneePadR", rig.kneeR, kneePadPos, Vector3.zero, kneePad, padMat);
     }
 
     // Built in place every run (unlike the sphere projectiles) so tweaks to its shape reach the existing prefab.
@@ -1426,7 +1674,7 @@ public static class ProjectSetup
         CharacterFactory.BipedProportions proportions = CharacterFactory.PlayerProportions;
         CharacterFactory.BipedRig rig = CharacterFactory.BuildBiped(go, proportions, colors, "Soldier");
         AddHeroGear(rig, proportions, colors);
-        rig.rifle.localScale = Vector3.one * 1.15f;
+        rig.rifle.localScale = Vector3.one * 1.25f;
         AddTeamRing(go.transform, 0.55f, PlayerRingColor);
         CharacterFactory.BuildAnimations(go, rig, proportions, "Soldier",
             CharacterFactory.WalkGait, CharacterFactory.RunGait, "Shoot",
@@ -1558,6 +1806,96 @@ public static class ProjectSetup
         flame.gameObject.AddComponent<TorchFlicker>();
     }
 
+    // Cottage spots on the north side of the base, away from the south gate. Each fills one grid
+    // cell; the rotation picks which way the front door faces.
+    private static readonly (Vector3 position, float yaw)[] VillageLayout =
+    {
+        (new Vector3(-10.5f, 0f, 10.5f), 180f),
+        (new Vector3(-4.5f, 0f, 10.5f), 180f),
+        (new Vector3(4.5f, 0f, 10.5f), 180f),
+        (new Vector3(10.5f, 0f, 10.5f), 180f),
+        (new Vector3(-10.5f, 0f, 4.5f), 90f),
+        (new Vector3(10.5f, 0f, 4.5f), -90f),
+    };
+
+    private static void BuildVillage(Wall[] housePrefabs, PlacementGrid grid)
+    {
+        DestroyIfExists("Village");
+        Transform parent = new GameObject("Village").transform;
+        for (int i = 0; i < VillageLayout.Length; i++)
+        {
+            Wall prefab = housePrefabs[i % housePrefabs.Length];
+            if (prefab == null) continue;
+            var house = (GameObject)PrefabUtility.InstantiatePrefab(prefab.gameObject);
+            house.transform.SetParent(parent, false);
+            house.transform.SetPositionAndRotation(VillageLayout[i].position, Quaternion.Euler(0f, VillageLayout[i].yaw, 0f));
+            SetPrivateField(house.GetComponent<Wall>(), "grid", grid);
+        }
+    }
+
+    private static Wall[] GetOrCreateHousePrefabs()
+    {
+        return new[]
+        {
+            GetOrCreateHousePrefab("House", new Color(0.88f, 0.82f, 0.7f), new Color(0.55f, 0.2f, 0.16f)),
+            GetOrCreateHousePrefab("HouseAlt", new Color(0.78f, 0.74f, 0.66f), new Color(0.26f, 0.3f, 0.36f)),
+        };
+    }
+
+    // A timber-framed cottage that fills one grid cell: plaster walls, dark beams, a pitched roof
+    // with filled gables, chimney, door and warm glowing windows (they read at night in the trailer).
+    // It's a Wall, so the hero can't walk through, shots lob over it and zombies smash it if it's
+    // in their way.
+    private static Wall GetOrCreateHousePrefab(string name, Color plaster, Color roof)
+    {
+        string path = $"{PrefabFolder}/{name}.prefab";
+        GameObject go = LowPolyKit.BeginPrefabEdit(path, out bool wasLoaded);
+        LowPolyKit.ClearChildren(go);
+        LowPolyKit.RemoveOwnMesh(go);
+        go.name = name;
+
+        Material plasterMat = GetOrCreateMaterial($"{name}Plaster", plaster, unlit: false);
+        Material roofMat = GetOrCreateMaterial($"{name}Roof", roof, unlit: false);
+        Material beamMat = GetOrCreateMaterial("HouseBeam", new Color(0.3f, 0.2f, 0.12f), unlit: false);
+        Material stoneMat = GetOrCreateMaterial("WallStoneDark", new Color(0.42f, 0.39f, 0.36f), unlit: false);
+        Material windowMat = GetOrCreateMaterial("HouseWindowGlow", new Color(2.4f, 1.5f, 0.6f), unlit: true);
+
+        const float wallTop = 1.85f;
+        LowPolyKit.CreateBlock("Foundation", go.transform, new Vector3(0f, 0.12f, 0f), Vector3.zero, new Vector3(2.8f, 0.24f, 2.6f), stoneMat);
+        LowPolyKit.CreateBlock("Walls", go.transform, new Vector3(0f, 1.04f, 0f), Vector3.zero, new Vector3(2.5f, 1.62f, 2.2f), plasterMat);
+
+        for (int x = -1; x <= 1; x += 2)
+        {
+            for (int z = -1; z <= 1; z += 2)
+            {
+                LowPolyKit.CreateBlock("Post", go.transform, new Vector3(x * 1.24f, 1.04f, z * 1.09f), Vector3.zero, new Vector3(0.14f, 1.62f, 0.14f), beamMat);
+            }
+        }
+        LowPolyKit.CreateBlock("BeamBand", go.transform, new Vector3(0f, 1.2f, 0f), Vector3.zero, new Vector3(2.54f, 0.1f, 2.24f), beamMat);
+
+        // Roof: two pitched slabs along X over a rotated block that fills the gable triangles.
+        LowPolyKit.CreateBlock("Gable", go.transform, new Vector3(0f, wallTop, 0f), new Vector3(45f, 0f, 0f), new Vector3(2.46f, 1.5f, 1.5f), plasterMat);
+        LowPolyKit.CreateBlock("RoofFront", go.transform, new Vector3(0f, wallTop + 0.5f, 0.6f), new Vector3(42f, 0f, 0f), new Vector3(2.9f, 0.12f, 1.75f), roofMat);
+        LowPolyKit.CreateBlock("RoofBack", go.transform, new Vector3(0f, wallTop + 0.5f, -0.6f), new Vector3(-42f, 0f, 0f), new Vector3(2.9f, 0.12f, 1.75f), roofMat);
+        LowPolyKit.CreateBlock("Ridge", go.transform, new Vector3(0f, wallTop + 1.08f, 0f), Vector3.zero, new Vector3(2.95f, 0.1f, 0.16f), beamMat);
+        LowPolyKit.CreateBlock("Chimney", go.transform, new Vector3(0.75f, wallTop + 0.9f, -0.45f), Vector3.zero, new Vector3(0.34f, 1.1f, 0.34f), stoneMat);
+
+        // Front (+Z) door and windows; one more window on each side.
+        float front = 1.1f + 0.02f;
+        LowPolyKit.CreateBlock("Door", go.transform, new Vector3(-0.45f, 0.75f, front), Vector3.zero, new Vector3(0.6f, 1.05f, 0.05f), beamMat);
+        LowPolyKit.CreateBlock("WindowFront", go.transform, new Vector3(0.6f, 1.15f, front), Vector3.zero, new Vector3(0.5f, 0.45f, 0.04f), windowMat);
+        LowPolyKit.CreateBlock("WindowFrameFront", go.transform, new Vector3(0.6f, 1.15f, front + 0.01f), Vector3.zero, new Vector3(0.06f, 0.45f, 0.04f), beamMat);
+        LowPolyKit.CreateBlock("WindowLeft", go.transform, new Vector3(-1.27f, 1.15f, 0f), Vector3.zero, new Vector3(0.04f, 0.45f, 0.5f), windowMat);
+        LowPolyKit.CreateBlock("WindowRight", go.transform, new Vector3(1.27f, 1.15f, 0f), Vector3.zero, new Vector3(0.04f, 0.45f, 0.5f), windowMat);
+
+        LowPolyKit.GetOrAddComponent<Health>(go).Configure(600f);
+        LowPolyKit.GetOrAddComponent<HitFlash>(go);
+        Wall wall = LowPolyKit.GetOrAddComponent<Wall>(go);
+        wall.SetHeight(2.9f);
+
+        return LowPolyKit.EndPrefabEdit(go, path, wasLoaded).GetComponent<Wall>();
+    }
+
     private static Gate GetOrCreateGatePrefab()
     {
         string path = $"{PrefabFolder}/Gate.prefab";
@@ -1600,6 +1938,7 @@ public static class ProjectSetup
         LowPolyKit.GetOrAddComponent<HitFlash>(go);
         Wall wall = LowPolyKit.GetOrAddComponent<Wall>(go);
         wall.SetFootprint(new Vector2(3f, 0.8f));
+        wall.SetHeight(2.85f);
         LowPolyKit.GetOrAddComponent<Gate>(go).Configure(leftDoor, rightDoor);
 
         return LowPolyKit.EndPrefabEdit(go, path, wasLoaded).GetComponent<Gate>();
@@ -1651,7 +1990,8 @@ public static class ProjectSetup
 
         LowPolyKit.GetOrAddComponent<Health>(go).Configure(700f);
         LowPolyKit.GetOrAddComponent<HitFlash>(go);
-        LowPolyKit.GetOrAddComponent<Wall>(go);
+        // Solid up to the platform; the rails above are thin enough for shots to pass.
+        LowPolyKit.GetOrAddComponent<Wall>(go).SetHeight(platformY + 0.13f);
         LowPolyKit.GetOrAddComponent<Watchtower>(go).Configure(guardPrefab, post.transform);
 
         return LowPolyKit.EndPrefabEdit(go, path, wasLoaded).GetComponent<Watchtower>();
@@ -2476,9 +2816,10 @@ public static class ProjectSetup
     }
 
     private static void ConfigureProjectileBehavior(Projectile projectile, float speed, float lifetime, Color fxColor, float glow,
-        bool homing = false, float splashRadius = 0f, int pierceCount = 0, int chainCount = 0, float chainRange = 4f)
+        bool homing = false, float splashRadius = 0f, int pierceCount = 0, int chainCount = 0, float chainRange = 4f, bool bullet = false)
     {
         var so = new SerializedObject(projectile);
+        so.FindProperty("isBullet").boolValue = bullet;
         so.FindProperty("speed").floatValue = speed;
         so.FindProperty("lifetime").floatValue = lifetime;
         so.FindProperty("homing").boolValue = homing;
@@ -2497,6 +2838,15 @@ public static class ProjectSetup
             renderer.sharedMaterial.color = new Color(fxColor.r * glow, fxColor.g * glow, fxColor.b * glow, 1f);
             EditorUtility.SetDirty(renderer.sharedMaterial);
         }
+    }
+
+    // Stretches a round projectile into a thin streak along its flight direction (+Z).
+    private static void StyleAsTracer(Projectile projectile, float length, float width)
+    {
+        projectile.transform.localScale = new Vector3(width, width, length);
+        if (projectile.TryGetComponent(out SphereCollider collider)) collider.radius = 0.5f;
+        if (projectile.TryGetComponent(out Renderer renderer)) renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        PrefabUtility.SavePrefabAsset(projectile.gameObject);
     }
 
     private static void ConfigureEnemyFeedback(Enemy enemy, Color deathColor, int deathBurstCount, float attackShake, float deathShake)

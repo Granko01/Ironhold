@@ -8,6 +8,8 @@ public class Wall : MonoBehaviour
 {
     // Half the footprint on X/Z, axis-aligned (walls are never rotated).
     [SerializeField] private Vector2 halfSize = new Vector2(1.45f, 1.45f);
+    // Height of the solid part above the wall's base, for shots flying over it.
+    [SerializeField] private float height = 1.95f;
     [SerializeField] private Color debrisColor = new Color(0.55f, 0.5f, 0.45f);
     [SerializeField] private PlacementGrid grid;
 
@@ -35,6 +37,116 @@ public class Wall : MonoBehaviour
     private void OnDisable() => all.Remove(this);
 
     public void SetFootprint(Vector2 halfExtents) => halfSize = halfExtents;
+    public void SetHeight(float solidHeight) => height = solidHeight;
+
+    private float Top => transform.position.y + height;
+
+    private bool ContainsXZ(Vector3 point) =>
+        Mathf.Abs(point.x - transform.position.x) <= halfSize.x && Mathf.Abs(point.z - transform.position.z) <= halfSize.y;
+
+    // The wall the point stands on (e.g. a guard on their watchtower), so their own shots ignore it.
+    public static Wall FindUnder(Vector3 point)
+    {
+        for (int i = 0; i < all.Count; i++)
+        {
+            if (all[i].ContainsXZ(point) && point.y >= all[i].Top - 0.5f) return all[i];
+        }
+        return null;
+    }
+
+    // Inside solid stone - shots that end up here stop.
+    public static bool IsInsideSolid(Vector3 point, Wall ignore)
+    {
+        for (int i = 0; i < all.Count; i++)
+        {
+            Wall wall = all[i];
+            if (wall == ignore || wall.Passable) continue;
+            if (point.y < wall.Top && point.y > wall.transform.position.y && wall.ContainsXZ(point)) return true;
+        }
+        return false;
+    }
+
+    // How much higher than the straight line from `from` to `to` a shot must pass to clear every
+    // wall in between (0 if the line is already clear), and where along the line (0-1) that is.
+    public static float ClearanceNeeded(Vector3 from, Vector3 to, Wall ignore, out float atFraction)
+    {
+        const float margin = 0.35f;
+        float worst = 0f;
+        atFraction = 0.5f;
+
+        for (int i = 0; i < all.Count; i++)
+        {
+            Wall wall = all[i];
+            if (wall == ignore || wall.Passable) continue;
+            if (!wall.SegmentOverlapXZ(from, to, out float enter, out float exit)) continue;
+
+            // Check where the line enters and leaves the block, plus its middle.
+            foreach (float t in new[] { enter, (enter + exit) * 0.5f, exit })
+            {
+                float lineY = Mathf.Lerp(from.y, to.y, t);
+                float shortfall = wall.Top + margin - lineY;
+                if (shortfall > worst)
+                {
+                    worst = shortfall;
+                    atFraction = t;
+                }
+            }
+        }
+        return worst;
+    }
+
+    // Peak height of a parabolic lob (lift = h*4t(1-t) along the line) that clears every wall
+    // between `from` and `to` - checked at each block's near face, middle and far face. 0 if the
+    // straight line is already clear.
+    public static float RequiredArc(Vector3 from, Vector3 to, Wall ignore)
+    {
+        const float margin = 0.35f;
+        float arc = 0f;
+
+        for (int i = 0; i < all.Count; i++)
+        {
+            Wall wall = all[i];
+            if (wall == ignore || wall.Passable) continue;
+            if (!wall.SegmentOverlapXZ(from, to, out float enter, out float exit)) continue;
+
+            for (int k = 0; k <= 2; k++)
+            {
+                float t = Mathf.Lerp(enter, exit, k * 0.5f);
+                float shortfall = wall.Top + margin - Mathf.Lerp(from.y, to.y, t);
+                if (shortfall <= 0f) continue;
+                float tc = Mathf.Clamp(t, 0.04f, 0.96f);
+                arc = Mathf.Max(arc, shortfall / (4f * tc * (1f - tc)));
+            }
+        }
+        return arc;
+    }
+
+    // Slab test of the segment against this wall's footprint on the ground plane.
+    private bool SegmentOverlapXZ(Vector3 from, Vector3 to, out float enter, out float exit)
+    {
+        enter = 0f;
+        exit = 1f;
+        Vector3 center = transform.position;
+        float[] origin = { from.x - center.x, from.z - center.z };
+        float[] delta = { to.x - from.x, to.z - from.z };
+        float[] half = { halfSize.x, halfSize.y };
+
+        for (int axis = 0; axis < 2; axis++)
+        {
+            if (Mathf.Abs(delta[axis]) < 0.0001f)
+            {
+                if (Mathf.Abs(origin[axis]) > half[axis]) return false;
+                continue;
+            }
+            float t1 = (-half[axis] - origin[axis]) / delta[axis];
+            float t2 = (half[axis] - origin[axis]) / delta[axis];
+            if (t1 > t2) (t1, t2) = (t2, t1);
+            enter = Mathf.Max(enter, t1);
+            exit = Mathf.Min(exit, t2);
+            if (enter > exit) return false;
+        }
+        return true;
+    }
     public void SetGrid(PlacementGrid placementGrid) => grid = placementGrid;
 
     // Occupied cells aren't serialized, so every wall (pre-built or placed) claims its footprint at play start.

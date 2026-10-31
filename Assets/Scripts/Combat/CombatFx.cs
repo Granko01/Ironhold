@@ -37,6 +37,20 @@ public static class CombatFx
         Object.Destroy(lineGo, duration);
     }
 
+    // A split-second burst of light at a muzzle, stretched along the shot.
+    public static void MuzzleFlash(Vector3 position, Vector3 forward, Color color)
+    {
+        GameObject flash = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        flash.name = "MuzzleFlashFx";
+        Object.Destroy(flash.GetComponent<Collider>());
+        Renderer renderer = flash.GetComponent<Renderer>();
+        renderer.sharedMaterial = GetMaterial(color);
+        renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        flash.transform.SetPositionAndRotation(position + forward * 0.12f, Quaternion.LookRotation(forward) * Quaternion.Euler(0f, 0f, Random.Range(0f, 90f)));
+        flash.transform.localScale = new Vector3(0.24f, 0.24f, 0.5f);
+        flash.AddComponent<ShrinkAndDestroy>().Begin(0.05f);
+    }
+
     private static Material GetMaterial(Color color)
     {
         if (materials.TryGetValue(color, out Material material) && material != null) return material;

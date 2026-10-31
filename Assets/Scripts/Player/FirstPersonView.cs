@@ -29,7 +29,11 @@ public class FirstPersonView : MonoBehaviour
     private float pitch;
     private float kick;
 
-    public void Configure(Transform[] armRoots) => viewmodelRoots = armRoots;
+    public void Configure(Transform[] armRoots, Vector3 eye)
+    {
+        viewmodelRoots = armRoots;
+        eyeOffset = eye;
+    }
 
     private void Awake()
     {

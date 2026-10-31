@@ -35,14 +35,22 @@ public class Watchtower : MonoBehaviour
         if (HasGuard || guardPrefab == null || guardPost == null) return false;
         if (GameManager.Instance == null || !GameManager.Instance.SpendScrap(hireCost)) return false;
 
+        StationGuard();
+        Sfx.Play(SfxId.Upgrade, 1.2f);
+        return true;
+    }
+
+    // Puts a guard on the platform without charging for it (paid hiring goes through TryHireGuard;
+    // scripted scenes like the trailer call this directly).
+    public void StationGuard()
+    {
+        if (HasGuard || guardPrefab == null || guardPost == null) return;
+
         // Parented to the tower so the guard falls with it.
         guard = Instantiate(guardPrefab, guardPost.position, guardPost.rotation, transform);
         guard.SetRange(guardRange);
         guard.HoldPosition(guardPost.position);
-
         GameFx.Dust(guardPost.position, 10);
-        Sfx.Play(SfxId.Upgrade, 1.2f);
-        return true;
     }
 
     // The nearest tower within `radius` that still has a free guard post.

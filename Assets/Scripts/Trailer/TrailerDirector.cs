@@ -1,0 +1,711 @@
+using System;
+using System.Collections;
+using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
+using UnityEngine.UI;
+
+// Plays the ~32 second vertical (9:16) trailer for TikTok/Reels/Shorts. Everything on screen is the
+// real game running - towers, walls, guards and zombies use their normal scripts. The director only
+// spawns the horde, moves the camera and hero through a fixed shot list, and handles the film
+// language: handheld sway, focus pulls, slow-motion beats, flashes, dips to black and captions.
+// Captions sit in the upper-middle of the frame, clear of the app UI at the bottom and right edge.
+public class TrailerDirector : MonoBehaviour
+{
+    [Header("Scene")]
+    [SerializeField] private Camera cam;
+    [SerializeField] private Transform core;
+    [SerializeField] private Transform hero;
+    [SerializeField] private Wall wallToBreak;
+    [SerializeField] private Volume postFx;
+    [SerializeField] private Vector3 towerShotCenter = new Vector3(-8f, 0f, -12.5f);
+
+    [Header("Prefabs")]
+    [SerializeField] private Enemy walkerPrefab;
+    [SerializeField] private Enemy runnerPrefab;
+    [SerializeField] private Enemy brutePrefab;
+    [SerializeField] private Enemy spitterPrefab;
+    [SerializeField] private Enemy bomberPrefab;
+    [SerializeField] private Enemy bossPrefab;
+    [SerializeField] private Soldier soldierPrefab;
+    [SerializeField] private DogCompanion dogPrefab;
+
+    [Header("UI")]
+    [SerializeField] private Image fade;
+    [SerializeField] private Image flash;
+    [SerializeField] private Text caption;
+    [SerializeField] private Text title;
+    [SerializeField] private Text subtitle;
+    [SerializeField] private Text callToAction;
+
+    [Header("Horde")]
+    [SerializeField] private float hordeInterval = 0.32f;
+    [SerializeField] private int maxEnemies = 40;
+
+    private const float DefaultFov = 50f;
+
+    private Health heroHealth;
+    private Animator heroAnimator;
+    private DepthOfField depthOfField;
+    private Enemy boss;
+    private bool hordeActive;
+    private float shake;
+    private float aperture = 5.6f;
+
+    // Staging for the bigger base: the south gate line, the wall block that breaks (the ambush
+    // happens just inside it) and the soldiers holding the line east of it.
+    private const float GateZ = -16.5f;
+    private static readonly Vector3 BreachPoint = new Vector3(4.5f, 0f, -16.5f);
+    private static readonly Vector3[] DefenderLine =
+    {
+        new Vector3(8f, 0f, -12f), new Vector3(10.5f, 0f, -12.5f), new Vector3(13f, 0f, -12f),
+    };
+
+    private PlayerShooter heroShooter;
+    private Soldier victim;
+    private Enemy ambusher;
+    private Vector3 bodyMiddle;
+    private DogCompanion ambushDog;
+    private Coroutine captionRoutine;
+    private Vector2 captionBasePosition;
+
+    private static readonly int SpeedParam = Animator.StringToHash("Speed");
+    private static readonly Color BloodColor = new Color(0.55f, 0.06f, 0.05f);
+    private static readonly int RoarParam = Animator.StringToHash("Roar");
+
+    public void Configure(Camera camera, Transform coreTransform, Transform heroTransform, Wall breakableWall, Volume volume,
+        Enemy walker, Enemy runner, Enemy brute, Enemy spitter, Enemy bomber, Enemy bossEnemy,
+        Soldier soldier, DogCompanion dog,
+        Image fadeImage, Image flashImage, Text captionText, Text titleText, Text subtitleText, Text ctaText)
+    {
+        cam = camera;
+        core = coreTransform;
+        hero = heroTransform;
+        wallToBreak = breakableWall;
+        postFx = volume;
+        walkerPrefab = walker;
+        runnerPrefab = runner;
+        brutePrefab = brute;
+        spitterPrefab = spitter;
+        bomberPrefab = bomber;
+        bossPrefab = bossEnemy;
+        soldierPrefab = soldier;
+        dogPrefab = dog;
+        fade = fadeImage;
+        flash = flashImage;
+        caption = captionText;
+        title = titleText;
+        subtitle = subtitleText;
+        callToAction = ctaText;
+    }
+
+    private void Awake()
+    {
+        heroHealth = hero.GetComponent<Health>();
+        heroAnimator = hero.GetComponentInChildren<Animator>();
+        heroShooter = hero.GetComponent<PlayerShooter>();
+        cam.fieldOfView = DefaultFov;
+
+        // .profile (not sharedProfile) works on a runtime copy, so focus pulls never edit the asset.
+        if (postFx != null) postFx.profile.TryGet(out depthOfField);
+
+        captionBasePosition = caption.rectTransform.anchoredPosition;
+        SetAlpha(fade, 1f);
+        SetAlpha(flash, 0f);
+        foreach (Text text in new[] { caption, title, subtitle, callToAction }) SetAlpha(text, 0f);
+    }
+
+    private void Update()
+    {
+        // The hero is the star - they never go down mid-trailer. The ambushing zombie is kept alive
+        // too, until the dog gets it, so stray tower fire can't spoil the beat.
+        if (heroHealth != null) heroHealth.Heal(1000f);
+        if (ambusher != null) ambusher.Health.Heal(1000f);
+        shake = Mathf.MoveTowards(shake, 0f, Time.unscaledDeltaTime * 1.5f);
+    }
+
+    private void OnDisable() => Time.timeScale = 1f;
+
+    private IEnumerator Start()
+    {
+        // Guards are already on the corner towers, and soldiers already hold the line by the
+        // south wall, when the base is revealed.
+        foreach (Watchtower tower in FindObjectsByType<Watchtower>()) tower.StationGuard();
+        SpawnDefenders();
+
+        // 0. Cold open: black screen, two heartbeat thuds, a whispered line.
+        Sfx.Play(SfxId.Boom, 0.35f, 0.6f);
+        ShowWhisper("WHEN NIGHT FALLS...", 0.2f, 1.3f);
+        yield return new WaitForSeconds(0.45f);
+        Sfx.Play(SfxId.Boom, 0.32f, 0.5f);
+        yield return new WaitForSeconds(1.35f);
+
+        // 1. Hook: shallow focus, low in the treeline as the dead claw out of the dirt.
+        StartCoroutine(FadeTo(fade, 0f, 0.9f));
+        Vector3 hookSpot = new Vector3(-3f, 0f, -28f);
+        StartCoroutine(SpawnHookZombies(hookSpot));
+        ShowWhisper("THE DEAD RISE", 1.1f, 1.6f);
+        aperture = 1.8f;
+        yield return Shot(3.2f, k => Place(Vector3.Lerp(new Vector3(-6.5f, 1.1f, -32.5f), new Vector3(-5.6f, 1.3f, -31.2f), Ease(k)), hookSpot + Vector3.up * 0.9f));
+
+        // 2. Reveal: drone push over the trees onto the walled village. The horde starts now.
+        hordeActive = true;
+        StartCoroutine(Horde());
+        Spawn(brutePrefab, BreachPoint + new Vector3(0f, 0f, -4.5f), emerge: true);
+        Punch("DEFEND\nYOUR BASE");
+        aperture = 9f;
+        yield return Shot(3.5f, k => Place(Vector3.Lerp(new Vector3(0f, 24f, -46f), new Vector3(0f, 15f, -29f), Ease(k)), Vector3.Lerp(core.position + new Vector3(0f, 0f, -8f), core.position, Ease(k))));
+
+        // 3. Wall: low by the south wall; one block bursts in slow motion with a flash.
+        Vector3 wallFocus = wallToBreak != null ? wallToBreak.transform.position : BreachPoint;
+        Punch("HOLD\nTHE WALL");
+        aperture = 3.5f;
+        StartCoroutine(BreakWallAfter(2.2f));
+        yield return Shot(3.5f, k => Place(Vector3.Lerp(new Vector3(11.5f, 2.2f, -22f), new Vector3(9.5f, 2.6f, -21f), Ease(k)), wallFocus + new Vector3(0f, 1f, -1.5f), roll: Mathf.Lerp(-4f, -1f, k)));
+
+        // 4. Towers: slow orbit across the tower line as everything opens fire.
+        Punch("UNLEASH\nYOUR ARSENAL");
+        aperture = 5.6f;
+        yield return Shot(4f, k =>
+        {
+            // Swings from straight south of the towers toward (but well clear of) the corner watchtower.
+            float angle = Mathf.Lerp(175f, 220f, Ease(k)) * Mathf.Deg2Rad;
+            Vector3 orbit = new Vector3(Mathf.Sin(angle) * 9f, 4.2f, Mathf.Cos(angle) * 9f);
+            Place(towerShotCenter + orbit, towerShotCenter + new Vector3(0f, 1.4f, -2.5f));
+        });
+
+        // 5. Ambush: chase camera behind the hero, sprinting in from the edge of the base with
+        // their dog. As they pull up, the view settles on a zombie hunched over a fallen soldier.
+        heroShooter.enabled = false;
+        StageAmbush();
+        Vector3 runFrom = new Vector3(-8.5f, 0f, -2.5f);
+        Vector3 runTo = bodyMiddle + new Vector3(-1.2f, 0f, 3.4f);
+        hero.SetPositionAndRotation(runFrom, Quaternion.LookRotation(runTo - runFrom));
+        SpawnHeroDog(runFrom);
+        StartCoroutine(Feeding());
+        ShowWhisper("NO ONE IS SAFE", 1.6f, 1.4f);
+        aperture = 6f;
+        // The chase camera and the dog's heel spot follow the run path, not the hero's facing, so
+        // neither swings around when the hero turns at the end.
+        Quaternion runHeading = Quaternion.LookRotation(Flat(runTo - runFrom));
+        heroRunSpeed = 0f;
+        Vector3 chaseEye = runFrom + runHeading * ChaseOffset;
+        yield return Shot(3.8f, k =>
+        {
+            float remaining = RunHero(runTo, 5.5f);
+            // Face the run, then - only once nearly stopped - turn to what they've found.
+            FaceHeroToward(remaining > 0.8f ? runTo : bodyMiddle);
+            DogAtHeel(runHeading);
+
+            Vector3 desiredEye = hero.position + runHeading * ChaseOffset;
+            chaseEye = Vector3.Lerp(chaseEye, desiredEye, 1f - Mathf.Exp(-6f * Time.deltaTime));
+            Vector3 ahead = hero.position + runHeading * Vector3.forward * 5f + Vector3.up;
+            Vector3 scene = bodyMiddle + Vector3.up * 0.5f;
+            Place(chaseEye, Vector3.Lerp(ahead, scene, Ease(Mathf.InverseLerp(0.35f, 0.8f, k))));
+        });
+        if (heroAnimator != null) heroAnimator.SetFloat(SpeedParam, 0f);
+
+        // 6. Dog: low side angle as the hero's dog launches itself onto the zombie (slow motion).
+        Vector3 struggle = bodyMiddle;
+        aperture = 4.5f;
+        StartCoroutine(DogPounce(0.3f));
+        yield return Shot(2.6f, k => Place(Vector3.Lerp(struggle + new Vector3(5.5f, 1.5f, 3.4f), struggle + new Vector3(4.8f, 1.4f, 2.8f), Ease(k)), struggle + new Vector3(-0.8f, 0.6f, 1.2f), roll: -2f));
+        heroShooter.enabled = true;
+
+        // 7. Defenders: low at the east end of the line, looking down it - the soldiers stack up
+        // one behind another, firing toward the wall. A slow push in, well clear of the stonework.
+        Punch("STAND\nTOGETHER");
+        aperture = 4f;
+        Vector3 lineEnd = DefenderLine[DefenderLine.Length - 1];
+        Vector3 lineStart = DefenderLine[0];
+        yield return Shot(3f, k =>
+        {
+            Vector3 eye = lineEnd + Vector3.Lerp(new Vector3(1.3f, 1.05f, -1.4f), new Vector3(0.8f, 1.15f, -1.1f), Ease(k));
+            Place(eye, lineStart + new Vector3(-2.5f, 1.3f, 0.2f));
+        });
+
+        // 8. Boss: dutch-angle dolly zoom while the giant roars in slow motion.
+        Punch("FACE\nTHE HORDE");
+        // The giant claws its way out of the ground in front of the camera.
+        boss = Spawn(bossPrefab, new Vector3(2f, 0f, GateZ - 10.5f), emerge: true);
+        Vector3 bossPos = boss != null ? boss.transform.position : new Vector3(2f, 0f, GateZ - 10.5f);
+        if (boss != null)
+        {
+            Animator bossAnimator = boss.GetComponentInChildren<Animator>();
+            if (bossAnimator != null) bossAnimator.SetTrigger(RoarParam);
+        }
+        shake = 0.8f;
+        Sfx.Play(SfxId.Boom, 0.4f);
+        StartCoroutine(SlowMotion(0.35f, 0.8f));
+        aperture = 2.2f;
+        yield return Shot(3f, k =>
+        {
+            if (boss != null) bossPos = boss.transform.position;
+            // Dolly zoom: the camera closes in while the lens widens, so the boss holds its size
+            // while the world behind it stretches away.
+            Vector3 eye = bossPos + Vector3.Lerp(new Vector3(6f, 0.6f, 7f), new Vector3(3.6f, 0.9f, 5f), Ease(k));
+            cam.fieldOfView = Mathf.Lerp(38f, 58f, Ease(k));
+            Place(eye, bossPos + Vector3.up * 4f, roll: Mathf.Lerp(9f, 5f, k));
+        });
+        cam.fieldOfView = DefaultFov;
+
+        // 9. Title: crane up over the base, darken, logo and call to action.
+        HideCaption();
+        Time.timeScale = 1f;
+        StartCoroutine(FadeTo(fade, 0.6f, 1f));
+        StartCoroutine(PunchIn(title, 0.3f));
+        StartCoroutine(PunchIn(subtitle, 0.8f));
+        StartCoroutine(PulseCallToAction(1.4f));
+        aperture = 9f;
+        yield return Shot(5.5f, k => Place(Vector3.Lerp(new Vector3(0f, 9f, -24f), new Vector3(0f, 32f, -36f), Ease(k)), core.position));
+
+        hordeActive = false;
+        yield return FadeTo(fade, 1f, 0.5f);
+        yield return new WaitForSeconds(0.3f);
+
+#if UNITY_EDITOR
+        // Stops play mode, which also ends a Unity Recorder capture cleanly.
+        UnityEditor.EditorApplication.isPlaying = false;
+#endif
+    }
+
+    // --- Camera -------------------------------------------------------------
+
+    private IEnumerator Shot(float duration, Action<float> frame)
+    {
+        for (float t = 0f; t < duration; t += Time.deltaTime)
+        {
+            frame(t / duration);
+            yield return null;
+        }
+        frame(1f);
+    }
+
+    // Every placement gets a slow handheld drift on top, plus shake and an optional dutch roll,
+    // and pulls focus to whatever the camera is looking at.
+    private void Place(Vector3 position, Vector3 lookAt, float roll = 0f)
+    {
+        float time = Time.unscaledTime;
+        Vector3 sway = new Vector3(Mathf.PerlinNoise(time * 0.35f, 1.3f) - 0.5f, Mathf.PerlinNoise(2.7f, time * 0.35f) - 0.5f, 0f) * 1.2f;
+        Vector3 jitter = new Vector3(Mathf.PerlinNoise(time * 25f, 0f) - 0.5f, Mathf.PerlinNoise(0f, time * 25f) - 0.5f, 0f) * shake * 0.8f;
+
+        Quaternion rotation = Quaternion.LookRotation(lookAt - position) * Quaternion.Euler(sway.y, sway.x, roll);
+        cam.transform.SetPositionAndRotation(position + rotation * jitter, rotation);
+        Focus(Vector3.Distance(position, lookAt));
+    }
+
+    private void Focus(float distance)
+    {
+        if (depthOfField == null) return;
+        depthOfField.focusDistance.Override(distance);
+        depthOfField.aperture.Override(aperture);
+    }
+
+    private void FaceHeroToward(Vector3 point)
+    {
+        Vector3 to = Flat(point - hero.position);
+        // Too close to tell a direction - turning toward it would make the hero spin on the spot.
+        if (to.sqrMagnitude < 0.04f) return;
+        hero.rotation = Quaternion.RotateTowards(hero.rotation, Quaternion.LookRotation(to), 260f * Time.deltaTime);
+    }
+
+    // Moves the hero at a sprint (Speed above the animator's run threshold, so the Run clip plays).
+    // Pulled well back and up behind the runner, a little to their right, so the sprint reads.
+    private static readonly Vector3 ChaseOffset = new Vector3(1.2f, 3f, -5.5f);
+    private float heroRunSpeed;
+
+    // Sprints toward `destination`, speeding up from a standstill and easing to a stop at it, with
+    // the animator's Speed damped so run blends down to idle instead of cutting. Returns the
+    // distance still to go.
+    private float RunHero(Vector3 destination, float topSpeed)
+    {
+        Vector3 to = Flat(destination - hero.position);
+        float remaining = to.magnitude;
+        float targetSpeed = Mathf.Min(topSpeed, remaining * 2.5f);
+        heroRunSpeed = Mathf.MoveTowards(heroRunSpeed, targetSpeed, 14f * Time.deltaTime);
+        if (remaining > 0.01f) hero.position += to / remaining * Mathf.Min(heroRunSpeed * Time.deltaTime, remaining);
+        if (heroAnimator != null) heroAnimator.SetFloat(SpeedParam, heroRunSpeed / 3.4f, 0.12f, Time.deltaTime);
+        return remaining;
+    }
+
+    private static float Ease(float k) => k * k * (3f - 2f * k);
+
+    // Drops to `scale` speed, holds for `holdSeconds` of real time, then eases back to full speed.
+    private IEnumerator SlowMotion(float scale, float holdSeconds)
+    {
+        Time.timeScale = scale;
+        yield return new WaitForSecondsRealtime(holdSeconds);
+        for (float t = 0f; t < 0.35f; t += Time.unscaledDeltaTime)
+        {
+            Time.timeScale = Mathf.Lerp(scale, 1f, Ease(t / 0.35f));
+            yield return null;
+        }
+        Time.timeScale = 1f;
+    }
+
+    private IEnumerator Flash(float peak, float seconds)
+    {
+        for (float t = 0f; t < seconds; t += Time.unscaledDeltaTime)
+        {
+            SetAlpha(flash, peak * (1f - t / seconds));
+            yield return null;
+        }
+        SetAlpha(flash, 0f);
+    }
+
+    // --- Action -------------------------------------------------------------
+
+    private Enemy Spawn(Enemy prefab, Vector3 position, bool emerge)
+    {
+        if (prefab == null) return null;
+        Enemy enemy = Instantiate(prefab, position, Quaternion.identity);
+        enemy.Initialize(core, emerge);
+        return enemy;
+    }
+
+    private IEnumerator SpawnHookZombies(Vector3 spot)
+    {
+        Vector3[] offsets = { new Vector3(0f, 0f, 0f), new Vector3(-1.6f, 0f, 0.8f), new Vector3(1.4f, 0f, 1.2f) };
+        foreach (Vector3 offset in offsets)
+        {
+            yield return new WaitForSeconds(0.6f);
+            Spawn(walkerPrefab, spot + offset, emerge: true);
+            Sfx.Play(SfxId.Pop, 0.6f, 0.7f);
+        }
+    }
+
+    // A steady stream out of the southern treeline, so every shot has something to fight.
+    private IEnumerator Horde()
+    {
+        while (hordeActive)
+        {
+            if (Enemy.Active.Count < maxEnemies)
+            {
+                float angle = 180f + UnityEngine.Random.Range(-28f, 28f);
+                float radius = UnityEngine.Random.Range(27f, 31f);
+                Vector3 position = Quaternion.Euler(0f, angle, 0f) * Vector3.forward * radius;
+                Spawn(PickHordeType(), position, emerge: true);
+            }
+            yield return new WaitForSeconds(hordeInterval);
+        }
+    }
+
+    private Enemy PickHordeType()
+    {
+        float roll = UnityEngine.Random.value;
+        if (roll < 0.5f) return walkerPrefab;
+        if (roll < 0.7f) return runnerPrefab;
+        if (roll < 0.82f) return spitterPrefab;
+        if (roll < 0.92f) return bomberPrefab;
+        return brutePrefab;
+    }
+
+    private IEnumerator BreakWallAfter(float delay)
+    {
+        yield return new WaitForSeconds(delay);
+        if (wallToBreak == null) yield break;
+        wallToBreak.Health.TakeDamage(wallToBreak.Health.CurrentHealth);
+        shake = 0.7f;
+        StartCoroutine(Flash(0.3f, 0.3f));
+        StartCoroutine(SlowMotion(0.2f, 0.8f));
+    }
+
+    private void SpawnDefenders()
+    {
+        if (soldierPrefab == null) return;
+        foreach (Vector3 post in DefenderLine)
+        {
+            Soldier soldier = Instantiate(soldierPrefab, post, Quaternion.Euler(0f, 180f, 0f));
+            soldier.HoldPosition(post);
+        }
+        // The soldier who gets ambushed stands guard just inside the breach.
+        victim = Instantiate(soldierPrefab, BreachPoint + new Vector3(0f, 0f, 4f), Quaternion.Euler(0f, 180f, 0f));
+        victim.HoldPosition(victim.transform.position);
+    }
+
+    // A zombie that slipped through the breach has brought a soldier down: he lies flat on his
+    // back and the zombie crouches low beside his chest, feeding. Both are frozen in place
+    // (scripts and animators off, limbs posed by hand) so the beat plays the same every take.
+    private void StageAmbush()
+    {
+        victim.enabled = false;
+        Animator victimAnimator = victim.GetComponentInChildren<Animator>();
+        if (victimAnimator != null) victimAnimator.enabled = false;
+
+        // Tipped onto his back, head toward the west (the side the hero runs in from).
+        Vector3 feet = victim.transform.position;
+        victim.transform.SetPositionAndRotation(feet + Vector3.up * 0.18f, Quaternion.Euler(-90f, 90f, 0f));
+        PoseLimb(victim.transform, "Torso", Vector3.zero);
+        PoseLimb(victim.transform, "ArmL", new Vector3(0f, 0f, -18f));
+        PoseLimb(victim.transform, "ArmR", new Vector3(0f, 0f, 18f));
+        PoseLimb(victim.transform, "LegL", new Vector3(0f, 0f, -6f));
+        PoseLimb(victim.transform, "LegR", new Vector3(0f, 0f, 9f));
+        // With the arms posed by hand, the rifle would hang off at an odd angle - he's lost it.
+        foreach (Transform t in victim.GetComponentsInChildren<Transform>())
+        {
+            if (t.name == "Rifle") t.gameObject.SetActive(false);
+        }
+        bodyMiddle = feet + Vector3.left * 1.2f;
+        GameFx.Debris(bodyMiddle + Vector3.up * 0.2f, BloodColor, 10, 2f, 0.16f);
+
+        // Crouched at his side: sunk to the knees and hunched forward over the chest.
+        Vector3 side = Vector3.back * 0.75f;
+        ambusher = Spawn(walkerPrefab, bodyMiddle + side, emerge: false);
+        if (ambusher != null)
+        {
+            ambusher.enabled = false;
+            ambusher.transform.SetPositionAndRotation(bodyMiddle + side + Vector3.down * 0.5f, Quaternion.LookRotation(-side) * Quaternion.Euler(38f, 0f, 0f));
+        }
+    }
+
+    private static void PoseLimb(Transform root, string name, Vector3 euler)
+    {
+        foreach (Transform t in root.GetComponentsInChildren<Transform>())
+        {
+            if (t.name == name)
+            {
+                t.localRotation = Quaternion.Euler(euler);
+                return;
+            }
+        }
+    }
+
+    // The hero's dog, galloping at their heel on the run in. Scripted (its own AI off) so it
+    // can't wander off to fight other zombies before its big moment.
+    private void SpawnHeroDog(Vector3 near)
+    {
+        if (dogPrefab == null) return;
+        ambushDog = Instantiate(dogPrefab, near + hero.rotation * DogHeelOffset, hero.rotation);
+        ambushDog.enabled = false;
+    }
+
+    private static readonly Vector3 DogHeelOffset = new Vector3(-1f, 0f, -0.8f);
+
+    private void DogAtHeel(Quaternion heading)
+    {
+        // Once the pounce hands the dog back to its own AI (enabled), stop steering it.
+        if (ambushDog == null || ambushDog.enabled) return;
+        Transform dog = ambushDog.transform;
+        Vector3 spot = hero.position + heading * DogHeelOffset;
+        Vector3 to = spot - dog.position;
+        to.y = 0f;
+        float speed = Mathf.Min(to.magnitude / Mathf.Max(Time.deltaTime, 0.0001f), 7.5f);
+        dog.position = Vector3.MoveTowards(dog.position, spot, speed * Time.deltaTime);
+        if (to.sqrMagnitude > 0.01f) dog.rotation = Quaternion.RotateTowards(dog.rotation, Quaternion.LookRotation(to), 540f * Time.deltaTime);
+        ambushDog.AnimateGait(speed);
+    }
+
+    // The zombie keeps biting at the body: an attack lunge and a small spray every half second.
+    private IEnumerator Feeding()
+    {
+        Animator zombieAnimator = ambusher != null ? ambusher.GetComponentInChildren<Animator>() : null;
+        while (ambusher != null)
+        {
+            if (zombieAnimator != null) zombieAnimator.SetTrigger("Attack");
+            GameFx.Debris(bodyMiddle + Vector3.up * 0.35f, BloodColor, 5, 2.2f, 0.13f);
+            Sfx.Play(SfxId.Hit, 0.5f, 0.6f);
+            yield return new WaitForSeconds(0.5f);
+        }
+    }
+
+    // A proper pounce: gallop in, a split-second crouch to load up, a low fast leap with the front
+    // legs reaching (slow motion), then it slams into the zombie, knocks it over backwards, lands on
+    // top and shakes its head until the zombie stops moving. Then it hops off back to the hero.
+    private IEnumerator DogPounce(float delay)
+    {
+        yield return new WaitForSeconds(delay);
+        if (ambushDog == null || ambusher == null) yield break;
+
+        ambushDog.enabled = false;
+        Transform dog = ambushDog.transform;
+        Vector3 chest = bodyMiddle + Vector3.up * 0.35f;
+        Vector3 heading = chest - dog.position;
+        heading.y = 0f;
+        heading.Normalize();
+        Quaternion facing = Quaternion.LookRotation(heading);
+
+        // Gallop to the take-off point a couple of metres short.
+        Vector3 takeoff = new Vector3(chest.x, 0f, chest.z) - heading * 2.2f;
+        while (Vector3.Distance(Flat(dog.position), Flat(takeoff)) > 0.1f)
+        {
+            dog.SetPositionAndRotation(Vector3.MoveTowards(dog.position, takeoff, 8.5f * Time.deltaTime), Quaternion.RotateTowards(dog.rotation, facing, 720f * Time.deltaTime));
+            ambushDog.AnimateGait(8.5f);
+            yield return null;
+        }
+
+        // Crouch: haunches drop and the nose dips as it loads up.
+        for (float t = 0f; t < 0.12f; t += Time.deltaTime)
+        {
+            float k = t / 0.12f;
+            dog.SetPositionAndRotation(takeoff + Vector3.down * 0.12f * k, facing * Quaternion.Euler(8f * k, 0f, 0f));
+            ambushDog.PoseLeap(-0.25f * k);
+            yield return null;
+        }
+
+        // Leap: low and fast, slowed down for the beat.
+        Sfx.Play(SfxId.Pop, 0.5f, 0.8f);
+        StartCoroutine(SlowMotion(0.35f, 0.55f));
+        Vector3 landOn = chest + heading * 0.2f;
+        const float leapSeconds = 0.36f;
+        for (float t = 0f; t < leapSeconds; t += Time.deltaTime)
+        {
+            float k = t / leapSeconds;
+            Vector3 position = Vector3.Lerp(takeoff, landOn, k) + Vector3.up * (0.55f * 4f * k * (1f - k));
+            // Nose up off the ground, level at the top, tipping down into the hit.
+            dog.SetPositionAndRotation(position, facing * Quaternion.Euler(Mathf.Lerp(-18f, 14f, k), 0f, 0f));
+            ambushDog.PoseLeap(Mathf.Sin(Mathf.Min(1f, k * 1.4f) * Mathf.PI * 0.5f));
+            yield return null;
+        }
+
+        // Impact: the zombie goes over backwards, the dog lands on top of it.
+        Vector3 impact = ambusher.transform.position + Vector3.up * 0.9f;
+        GameFx.Debris(impact, BloodColor, 14, 4f, 0.18f);
+        Sfx.Play(SfxId.Boom, 1.2f, 0.6f);
+        shake = 0.4f;
+        Punch("LOYAL\nTILL THE END");
+        StartCoroutine(KnockOver(ambusher.transform, heading));
+
+        Vector3 pinned = ambusher.transform.position + heading * 0.6f + Vector3.up * 0.45f;
+        for (float t = 0f; t < 0.2f; t += Time.deltaTime)
+        {
+            dog.SetPositionAndRotation(Vector3.Lerp(landOn, pinned, t / 0.2f), facing * Quaternion.Euler(Mathf.Lerp(14f, 22f, t / 0.2f), 0f, 0f));
+            ambushDog.PoseLeap(Mathf.Lerp(1f, 0.3f, t / 0.2f));
+            yield return null;
+        }
+
+        // Pinned down, it tears at the zombie - head shaking side to side.
+        for (float t = 0f; t < 0.9f; t += Time.deltaTime)
+        {
+            ambushDog.ShakeHead(Mathf.Sin(t * 28f) * 28f);
+            if (Mathf.Repeat(t, 0.3f) < Time.deltaTime) GameFx.Debris(pinned + heading * 0.3f, BloodColor, 4, 2f, 0.12f);
+            yield return null;
+        }
+        ambushDog.ShakeHead(0f);
+        ambusher.Health.TakeDamage(ambusher.Health.CurrentHealth);
+        ambusher = null;
+
+        // Hop off and trot back to the hero.
+        ambushDog.PoseLeap(0f);
+        dog.SetPositionAndRotation(new Vector3(pinned.x, 0f, pinned.z) - heading * 0.4f, facing);
+        ambushDog.enabled = true;
+        ambushDog.Initialize(hero, 0);
+    }
+
+    // The zombie tips over backwards from its crouch onto the ground.
+    private IEnumerator KnockOver(Transform zombie, Vector3 pushDirection)
+    {
+        Vector3 fromPos = zombie.position;
+        Quaternion fromRot = zombie.rotation;
+        Vector3 toPos = new Vector3(fromPos.x, 0.1f, fromPos.z) + pushDirection * 0.7f;
+        Quaternion toRot = Quaternion.LookRotation(-pushDirection) * Quaternion.Euler(-80f, 0f, 0f);
+        for (float t = 0f; t < 0.3f; t += Time.deltaTime)
+        {
+            float k = Ease(t / 0.3f);
+            zombie.SetPositionAndRotation(Vector3.Lerp(fromPos, toPos, k), Quaternion.Slerp(fromRot, toRot, k));
+            yield return null;
+        }
+        zombie.SetPositionAndRotation(toPos, toRot);
+    }
+
+    private static Vector3 Flat(Vector3 v) => new Vector3(v.x, 0f, v.z);
+
+    // --- Text ---------------------------------------------------------------
+
+    // Action lines slam in from oversized - the standard short-form video caption move.
+    private void Punch(string text)
+    {
+        ResetCaption();
+        caption.text = text;
+        captionRoutine = StartCoroutine(PunchIn(caption, 0f));
+    }
+
+    // Quiet lines fade in and drift up slowly, then fade out.
+    private void ShowWhisper(string text, float delay, float hold)
+    {
+        ResetCaption();
+        captionRoutine = StartCoroutine(Whisper(text, delay, hold));
+    }
+
+    // Stops whatever the caption was doing (a whisper may be mid-drift) and puts it back in place.
+    private void ResetCaption()
+    {
+        if (captionRoutine != null) StopCoroutine(captionRoutine);
+        caption.rectTransform.anchoredPosition = captionBasePosition;
+        caption.rectTransform.localScale = Vector3.one;
+        SetAlpha(caption, 0f);
+    }
+
+    private IEnumerator Whisper(string text, float delay, float hold)
+    {
+        yield return new WaitForSeconds(delay);
+        caption.text = text;
+        RectTransform rect = caption.rectTransform;
+        Vector2 basePos = captionBasePosition;
+        rect.localScale = Vector3.one * 0.8f;
+
+        float total = hold + 0.8f;
+        for (float t = 0f; t < total; t += Time.unscaledDeltaTime)
+        {
+            float alpha = Mathf.Min(1f, t / 0.5f) * Mathf.Min(1f, (total - t) / 0.4f);
+            SetAlpha(caption, alpha);
+            rect.anchoredPosition = basePos + Vector2.up * (t * 12f);
+            yield return null;
+        }
+        SetAlpha(caption, 0f);
+        rect.anchoredPosition = basePos;
+        rect.localScale = Vector3.one;
+    }
+
+    private void HideCaption()
+    {
+        if (captionRoutine != null) StopCoroutine(captionRoutine);
+        captionRoutine = StartCoroutine(FadeTo(caption, 0f, 0.3f));
+    }
+
+    private IEnumerator PunchIn(Text text, float delay)
+    {
+        SetAlpha(text, 0f);
+        if (delay > 0f) yield return new WaitForSecondsRealtime(delay);
+
+        const float duration = 0.22f;
+        for (float t = 0f; t < duration; t += Time.unscaledDeltaTime)
+        {
+            float k = t / duration;
+            text.rectTransform.localScale = Vector3.one * Mathf.Lerp(1.45f, 1f, Ease(k));
+            SetAlpha(text, k);
+            yield return null;
+        }
+        text.rectTransform.localScale = Vector3.one;
+        SetAlpha(text, 1f);
+        Sfx.Play(SfxId.Boom, 1.6f, 0.35f);
+    }
+
+    private IEnumerator PulseCallToAction(float delay)
+    {
+        yield return PunchIn(callToAction, delay);
+        while (true)
+        {
+            callToAction.rectTransform.localScale = Vector3.one * (1f + Mathf.Sin(Time.unscaledTime * 5f) * 0.04f);
+            yield return null;
+        }
+    }
+
+    private IEnumerator FadeTo(Graphic graphic, float target, float duration)
+    {
+        float start = graphic.color.a;
+        for (float t = 0f; t < duration; t += Time.unscaledDeltaTime)
+        {
+            SetAlpha(graphic, Mathf.Lerp(start, target, t / duration));
+            yield return null;
+        }
+        SetAlpha(graphic, target);
+    }
+
+    private static void SetAlpha(Graphic graphic, float alpha)
+    {
+        if (graphic == null) return;
+        Color c = graphic.color;
+        c.a = alpha;
+        graphic.color = c;
+    }
+}

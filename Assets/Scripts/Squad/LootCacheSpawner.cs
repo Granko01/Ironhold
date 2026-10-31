@@ -11,8 +11,8 @@ public class LootCacheSpawner : MonoBehaviour
     [SerializeField] private float interval = 20f;
     [SerializeField] private int maxActive = 2;
     // Outside the starting walls, so grabbing a crate means a trip beyond the base.
-    [SerializeField] private float minRadius = 15f;
-    [SerializeField] private float maxRadius = 22f;
+    [SerializeField] private float minRadius = 21f;
+    [SerializeField] private float maxRadius = 26f;
     [SerializeField] private int baseReward = 60;
     [SerializeField] private int rewardPerWave = 10;
 
