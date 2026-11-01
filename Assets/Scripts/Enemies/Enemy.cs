@@ -225,7 +225,7 @@ public class Enemy : MonoBehaviour
     {
         Vector3 center = transform.position + Vector3.up * height * 0.5f;
         GameFx.Debris(center, deathColor, deathBurstCount, 5f + height);
-        Sfx.Play(SfxId.Pop, Mathf.Lerp(1.3f, 0.6f, Mathf.InverseLerp(1.2f, 5f, height)));
+        Sfx.Play(SfxId.Splat, Mathf.Lerp(1.15f, 0.6f, Mathf.InverseLerp(1.2f, 5f, height)));
         if (deathShake > 0f) IsoCameraFollow.AddTrauma(deathShake);
 
         GameManager.Instance?.AddScrap(Mathf.RoundToInt(scrapReward * RunModifiers.ScrapMultiplier), center);

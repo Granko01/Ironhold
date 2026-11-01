@@ -199,7 +199,7 @@ public class Projectile : MonoBehaviour
         else
         {
             GameFx.Sparks(transform.position, new Color(0.75f, 0.72f, 0.66f), 5);
-            Sfx.Play(SfxId.Hit, 0.6f, 0.35f);
+            Sfx.Play(SfxId.Ricochet);
         }
         Destroy(gameObject);
     }

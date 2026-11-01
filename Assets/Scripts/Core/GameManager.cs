@@ -24,6 +24,7 @@ public class GameManager : MonoBehaviour
         Time.timeScale = 1f;
         RunModifiers.Reset();
         UpgradeCatalog.ResetRun();
+        MusicDirector.Ensure();
     }
 
     private void Update()

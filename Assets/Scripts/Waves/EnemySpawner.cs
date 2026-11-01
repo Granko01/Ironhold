@@ -59,6 +59,7 @@ public class EnemySpawner : MonoBehaviour
         while (true)
         {
             CurrentWave++;
+            GameSettings.RecordWave(CurrentWave);
             IsBossWave = bossPrefab != null && bossEveryNWaves > 0 && CurrentWave % bossEveryNWaves == 0;
 
             PickApproaches();

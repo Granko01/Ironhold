@@ -130,6 +130,12 @@ public class TrailerDirector : MonoBehaviour
 
     private IEnumerator Start()
     {
+        // Score: forest + eerie pad from the first frame. Cues through the shots below:
+        // drums hit with the reveal, drop out when Leo is taken, return on the dog's impact,
+        // boss layer for the giant, dead silence on the cut to black, pad back under the title.
+        MusicDirector.Ensure(renderImmediately: true);
+        MusicDirector.Cue(calmLevel: 1f, combatLevel: 0f, bossLevel: 0f, fadeSeconds: 0f);
+
         // Guards are already on the corner towers, and soldiers already hold the line by the
         // south wall, when the base is revealed.
         foreach (Watchtower tower in FindObjectsByType<Watchtower>()) tower.StationGuard();
@@ -151,6 +157,8 @@ public class TrailerDirector : MonoBehaviour
         // 2. Reveal: drone push over the trees onto the walled village. The horde starts now.
         hordeActive = true;
         StartCoroutine(Horde());
+        MusicDirector.Cue(1f, 1f, 0f, fadeSeconds: 0.25f);
+        Sfx.Play(SfxId.WaveStart);
         Spawn(brutePrefab, BreachPoint + new Vector3(0f, 0f, -4.5f), emerge: true);
         Punch("DEFEND\nYOUR BASE");
         aperture = 9f;
@@ -238,6 +246,8 @@ public class TrailerDirector : MonoBehaviour
         }
         shake = 0.8f;
         Sfx.Play(SfxId.Boom, 0.4f);
+        Sfx.Play(SfxId.WaveStart, 0.7f);
+        MusicDirector.Cue(1f, 1f, 1f, fadeSeconds: 0.2f);
         StartCoroutine(SlowMotion(0.35f, 0.8f));
         aperture = 2.2f;
         yield return Shot(3f, k =>
@@ -259,6 +269,7 @@ public class TrailerDirector : MonoBehaviour
         HideCaption();
         hordeActive = false;
         StartCoroutine(PunchIn(title, 0.5f));
+        StartCoroutine(After(0.5f, () => MusicDirector.Cue(1f, 0f, 0f, fadeSeconds: 1.5f, ambienceLevel: 0.5f)));
         StartCoroutine(PunchIn(subtitle, 1f));
         StartCoroutine(PulseCallToAction(1.7f));
         StartCoroutine(FadeTo(comingSoon, 1f, 0.5f, delay: 2.4f));
@@ -342,7 +353,11 @@ public class TrailerDirector : MonoBehaviour
             // The leap: a low arc onto his back, slowed right down as it starts.
             if (ambusher != null && time >= leapAt && fallStart < 0f)
             {
-                if (time - Time.deltaTime < leapAt) StartCoroutine(SlowMotion(0.35f, 0.6f));
+                if (time - Time.deltaTime < leapAt)
+                {
+                    StartCoroutine(SlowMotion(0.35f, 0.6f));
+                    MusicDirector.Cue(0.8f, 0f, 0f, fadeSeconds: 0.15f);
+                }
                 float lk = Mathf.Clamp01((time - leapAt) / leapSeconds);
                 // Feet leave the ground at the gap and come down right behind him, arms on his back.
                 Vector3 landing = feet - toCamera * 0.45f;
@@ -426,6 +441,7 @@ public class TrailerDirector : MonoBehaviour
         Time.timeScale = 1f;
         SetAlpha(fade, 1f);
         Sfx.Play(SfxId.Boom, 0.3f, 1f);
+        MusicDirector.Cue(0f, 0f, 0f, fadeSeconds: 0f, ambienceLevel: 0f);
         yield return new WaitForSecondsRealtime(0.5f);
     }
 
@@ -708,6 +724,7 @@ public class TrailerDirector : MonoBehaviour
         Vector3 impact = ambusher.transform.position + Vector3.up * 0.9f;
         GameFx.Debris(impact, BloodColor, 14, 4f, 0.18f);
         Sfx.Play(SfxId.Boom, 1.2f, 0.6f);
+        MusicDirector.Cue(1f, 1f, 0f, fadeSeconds: 0.1f);
         shake = 0.4f;
         Punch("LOYAL\nTILL THE END");
         StartCoroutine(KnockOver(ambusher.transform, heading));

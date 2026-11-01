@@ -189,7 +189,7 @@ public class Soldier : MonoBehaviour
         if (projectilePrefab == null || firePoint == null) return;
 
         Projectile.FireVolley(projectilePrefab, firePoint, damage * RunModifiers.Damage(TowerKind.Hero), target, TowerKind.Hero);
-        Sfx.Play(SfxId.Shoot, 1.45f, 0.45f);
+        Sfx.Play(SfxId.LightShot, 1.08f, 0.6f);
         if (animator != null) animator.SetTrigger(ShootParam);
     }
 }

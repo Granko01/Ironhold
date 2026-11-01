@@ -35,6 +35,7 @@ public class IsoCameraFollow : MonoBehaviour
     public static void AddTrauma(float amount)
     {
         trauma = Mathf.Clamp01(trauma + amount);
+        if (amount >= 0.25f) Haptics.Pulse();
     }
 
     public void SetTarget(Transform newTarget)

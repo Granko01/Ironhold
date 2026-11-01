@@ -20,7 +20,7 @@ public static class ProjectSetup
 
     private static readonly string[] GeneratedSceneObjectNames =
     {
-        "Ground", "Core", "Player", "GameManager", "EnemySpawner", "TowerPlacer", "PlacementGrid", "EventSystem", "UICanvas", "EnvironmentDecor", "Arena", "PostFX", "Directional Light", "Squad", "LootSpawner", "BaseWalls", "Village"
+        "Ground", "Core", "Player", "GameManager", "EnemySpawner", "TowerPlacer", "PlacementGrid", "EventSystem", "UICanvas", "EnvironmentDecor", "Arena", "PostFX", "Directional Light", "Squad", "LootSpawner", "BaseWalls", "Village", "PostFXNight", "NightLook"
     };
 
     private const string PostFxProfilePath = "Assets/Settings/GameplayPostFX.asset";
@@ -163,11 +163,11 @@ public static class ProjectSetup
         Tower teslaTower = GetOrCreateTowerPrefab("TowerTesla", TowerStyle.Tesla, new Color(0.52f, 0.55f, 0.6f), TeslaAccent, 1f, 6.5f, 2f, 8f, teslaBoltProjectile);
         Tower missileTower = GetOrCreateTowerPrefab("TowerMissile", TowerStyle.Missile, new Color(0.56f, 0.53f, 0.5f), MissileAccent, 1.15f, 11f, 0.5f, 55f, missileProjectile);
 
-        ConfigureTower(gunTower, TowerKind.Gun, SfxId.Shoot, 1f);
-        ConfigureTower(cannonTower, TowerKind.Cannon, SfxId.Shoot, 0.5f);
-        ConfigureTower(sniperTower, TowerKind.Sniper, SfxId.Shoot, 0.7f);
-        ConfigureTower(teslaTower, TowerKind.Tesla, SfxId.Shoot, 1.8f);
-        ConfigureTower(missileTower, TowerKind.Missile, SfxId.Shoot, 0.4f);
+        ConfigureTower(gunTower, TowerKind.Gun, SfxId.LightShot, 1f);
+        ConfigureTower(cannonTower, TowerKind.Cannon, SfxId.CannonShot, 1f);
+        ConfigureTower(sniperTower, TowerKind.Sniper, SfxId.SniperShot, 1f);
+        ConfigureTower(teslaTower, TowerKind.Tesla, SfxId.Zap, 0.6f);
+        ConfigureTower(missileTower, TowerKind.Missile, SfxId.MissileLaunch, 1f);
 
         GameObject playerPrefabGo = GetOrCreatePlayerPrefab(bulletProjectile, arrowProjectile);
         DogCompanion dogPrefab = GetOrCreateDogPrefab();
@@ -179,6 +179,7 @@ public static class ProjectSetup
 
         BuildArena();
         ConfigureLightingAndAtmosphere();
+        BuildNightLook();
         // Leftover visual test of the wall prefab; walls aren't a gameplay feature yet.
         DestroyIfExists("WallDemo");
         // The static enemy gallery / boss demo predate real wave spawning. Every type now
@@ -538,34 +539,148 @@ public static class ProjectSetup
     [MenuItem("Tools/Iron Hold/3) Build Main Menu Scene")]
     public static void BuildMainMenuScene()
     {
+        T Load<T>(string name) where T : Object => AssetDatabase.LoadAssetAtPath<GameObject>($"{PrefabFolder}/{name}.prefab")?.GetComponent<T>();
+
+        // The menu backdrop is the real village, so it needs the game's prefabs.
+        string[] required = { "Core", "Player", "Wall", "Gate", "Watchtower", "Enemy", "House", "HouseAlt" };
+        foreach (string name in required)
+        {
+            if (string.IsNullOrEmpty(AssetDatabase.AssetPathToGUID($"{PrefabFolder}/{name}.prefab")))
+            {
+                EditorUtility.DisplayDialog("Iron Hold", "Prefabs are missing. Run 'Tools > Iron Hold > 2) Build Prototype Scene' first, then build the main menu.", "OK");
+                return;
+            }
+        }
+        if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
+
         EnsureFolder(SceneFolder);
-
+        EnsureFolder(MaterialFolder);
         string previousScenePath = EditorSceneManager.GetActiveScene().path;
-
         Scene menuScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
+        // ---- 3D backdrop: the walled village at dusk, in the trailer's grade ----
+        GameObject cameraGo = new GameObject("Main Camera", typeof(Camera), typeof(AudioListener));
+        cameraGo.tag = "MainCamera";
+        Camera cam = cameraGo.GetComponent<Camera>();
+        cam.fieldOfView = 50f;
+        cam.transform.SetPositionAndRotation(new Vector3(0f, 15f, -31f), Quaternion.LookRotation(new Vector3(0f, -1f, 0f) - new Vector3(0f, 15f, -31f)));
+
+        BuildArena();
+        ConfigureLightingAndAtmosphere();
+        UnityEngine.Rendering.Volume postFx = ApplyTrailerLook(cam);
+
+        GameObject fxGo = new GameObject("GameFx");
+        SetPrivateField(fxGo.AddComponent<GameFx>(), "particleMaterial", GetOrCreateParticleMaterial());
+
+        PlacementGrid grid = new GameObject("PlacementGrid").AddComponent<PlacementGrid>();
+
+        var core = (GameObject)PrefabUtility.InstantiatePrefab(Load<Transform>("Core").gameObject);
+        core.name = "Core";
+        core.transform.position = new Vector3(0f, 1f, 0f);
+
+        // The hero stands watch inside the south gate (far enough back that it stays shut).
+        var hero = (GameObject)PrefabUtility.InstantiatePrefab(Load<Transform>("Player").gameObject);
+        hero.name = "Player";
+        hero.transform.SetPositionAndRotation(new Vector3(0f, 0f, -10f), Quaternion.Euler(0f, 180f, 0f));
+        hero.GetComponent<PlayerController>().enabled = false;
+        hero.GetComponent<PlayerShooter>().enabled = false;
+
+        BuildBaseWalls(Load<Wall>("Wall"), Load<Gate>("Gate"), Load<Watchtower>("Watchtower"), grid, hero.transform);
+        BuildVillage(new[] { Load<Wall>("House"), Load<Wall>("HouseAlt") }, grid);
+
+        (string prefab, Vector3 position)[] towers =
+        {
+            ("TowerCannon", new Vector3(-10.5f, 0f, -13.5f)),
+            ("TowerTesla", new Vector3(-7.5f, 0f, -13.5f)),
+            ("TowerGun", new Vector3(-4.5f, 0f, -13.5f)),
+            ("TowerSniper", new Vector3(7.5f, 0f, 10.5f)),
+            ("TowerMissile", new Vector3(-13.5f, 0f, 10.5f)),
+            ("TowerGun", new Vector3(13.5f, 0f, -4.5f)),
+        };
+        Transform towerParent = new GameObject("Towers").transform;
+        foreach ((string prefab, Vector3 position) in towers)
+        {
+            Tower tower = Load<Tower>(prefab);
+            if (tower == null) continue;
+            var go = (GameObject)PrefabUtility.InstantiatePrefab(tower.gameObject);
+            go.transform.SetParent(towerParent, false);
+            go.transform.position = position;
+        }
+
+        var zombies = new System.Collections.Generic.List<Enemy>();
+        foreach (string name in new[] { "Enemy", "Enemy", "EnemyRunner", "EnemyBrute", "EnemySpitter" })
+        {
+            Enemy prefab = Load<Enemy>(name);
+            if (prefab != null) zombies.Add(prefab);
+        }
+        new GameObject("MenuBackdrop").AddComponent<MenuBackdrop>().Configure(cam, postFx, zombies.ToArray());
+
+        // ---- UI ----
         EnsureEventSystem();
-        Transform canvasTransform = EnsureCanvas();
+        Transform canvas = EnsureCanvas();
+        Vector2 center = new Vector2(0.5f, 0.5f);
+        Sprite shade = GetOrCreateShadeSprite();
 
-        GameObject background = new GameObject("Background", typeof(RectTransform), typeof(Image));
-        background.transform.SetParent(canvasTransform, false);
-        RectTransform backgroundRect = background.GetComponent<RectTransform>();
-        backgroundRect.anchorMin = Vector2.zero;
-        backgroundRect.anchorMax = Vector2.one;
-        backgroundRect.offsetMin = Vector2.zero;
-        backgroundRect.offsetMax = Vector2.zero;
-        background.GetComponent<Image>().color = new Color(0.08f, 0.09f, 0.11f);
+        // Dark gradients top and bottom so the logo and buttons read over the moving scene.
+        RectTransform topShade = CreateRect("TopShade", canvas, new Vector2(0f, 1f), Vector2.one, new Vector2(0.5f, 1f), Vector2.zero, new Vector2(0f, 900f));
+        AddImage(topShade, new Color(0.03f, 0.03f, 0.06f, 0.8f), shade);
+        // Flipped about its own centre so the gradient is darkest at the bottom edge.
+        RectTransform bottomShade = CreateRect("BottomShade", canvas, Vector2.zero, new Vector2(1f, 0f), center, new Vector2(0f, 450f), new Vector2(0f, 900f));
+        AddImage(bottomShade, new Color(0.03f, 0.03f, 0.06f, 0.85f), shade);
+        bottomShade.localScale = new Vector3(1f, -1f, 1f);
 
-        Text title = CreateText(canvasTransform, "TitleText", "IRON HOLD", 140, Color.white, TextAnchor.MiddleCenter, new Vector2(0.5f, 0.5f), new Vector2(0f, 420f), new Vector2(1040f, 180f));
-        title.fontStyle = FontStyle.Bold;
-        CreateText(canvasTransform, "SubtitleText", "Defend the Core", 48, new Color(0.75f, 0.78f, 0.85f), TextAnchor.MiddleCenter, new Vector2(0.5f, 0.5f), new Vector2(0f, 290f), new Vector2(1000f, 70f));
+        RectTransform safeArea = CreateRect("SafeArea", canvas, Vector2.zero, Vector2.one, center, Vector2.zero, Vector2.zero);
+        safeArea.gameObject.AddComponent<SafeAreaFitter>();
 
-        Button playButton = CreateMenuButton(canvasTransform, "PlayButton", "PLAY", new Vector2(0.5f, 0.5f), new Vector2(0f, -40f), new Vector2(600f, 150f), new Color(0.3f, 0.82f, 0.4f), 60);
-        Button quitButton = CreateMenuButton(canvasTransform, "QuitButton", "QUIT", new Vector2(0.5f, 0.5f), new Vector2(0f, -220f), new Vector2(600f, 120f));
+        // Logo block, styled like the trailer's end card.
+        RectTransform titleBlock = CreateRect("TitleBlock", safeArea, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), center, new Vector2(0f, -360f), new Vector2(1000f, 520f));
+        CreateTrailerText(titleBlock, "Title", 170, ScrapGold, new Vector2(0f, 120f)).text = "IRON HOLD";
+        CreateTrailerText(titleBlock, "Subtitle", 76, Color.white, new Vector2(0f, -25f)).text = "LAST STAND";
+        CreateTrailerText(titleBlock, "Tagline", 44, new Color(1f, 0.92f, 0.5f), new Vector2(0f, -130f)).text = "HOW LONG CAN YOU HOLD?";
 
-        GameObject controllerGo = new GameObject("MainMenuController");
-        MainMenuController controller = controllerGo.AddComponent<MainMenuController>();
-        controller.Configure(playButton, quitButton);
+        Text bestWave = CreateText(safeArea, "BestWave", "", 46, Color.white, TextAnchor.MiddleCenter, new Vector2(0.5f, 0f), new Vector2(0f, 560f), new Vector2(900f, 70f));
+        bestWave.fontStyle = FontStyle.Bold;
+        AddTextShadow(bestWave);
+
+        Button play = CreateMenuButton(safeArea, "PlayButton", "PLAY", new Vector2(0.5f, 0f), new Vector2(0f, 270f), new Vector2(640f, 190f), ScrapGold, 84);
+        // Pivot in the middle so the idle pulse grows from the centre.
+        RectTransform playRect = (RectTransform)play.transform;
+        playRect.pivot = center;
+        playRect.anchoredPosition = new Vector2(0f, 365f);
+
+        Button settings = CreateMenuButton(safeArea, "SettingsButton", "SETTINGS", new Vector2(0.5f, 0f), new Vector2(0f, 120f), new Vector2(380f, 100f), new Color(1f, 1f, 1f, 0.16f), 38);
+        settings.GetComponentInChildren<Text>().color = Color.white;
+
+        // Settings sheet: dim overlay blocks the menu behind it.
+        RectTransform panel = CreateRect("SettingsPanel", canvas, Vector2.zero, Vector2.one, center, Vector2.zero, Vector2.zero);
+        AddImage(panel, new Color(0f, 0f, 0f, 0.6f), raycast: true);
+        RectTransform card = CreateRect("Card", panel, center, center, center, Vector2.zero, new Vector2(900f, 1160f));
+        AddImage(card, new Color(0.08f, 0.09f, 0.12f, 0.96f), RoundedSprite, raycast: true);
+
+        Text header = CreateText(card, "Header", "SETTINGS", 72, ScrapGold, TextAnchor.MiddleCenter, center, new Vector2(0f, 470f), new Vector2(800f, 100f));
+        header.fontStyle = FontStyle.Bold;
+
+        CreateText(card, "MusicLabel", "MUSIC", 44, Color.white, TextAnchor.MiddleLeft, center, new Vector2(0f, 340f), new Vector2(720f, 60f)).fontStyle = FontStyle.Bold;
+        Slider music = CreateMenuSlider(card, "MusicSlider", new Vector2(0f, 260f), 720f);
+        CreateText(card, "SoundLabel", "SOUND", 44, Color.white, TextAnchor.MiddleLeft, center, new Vector2(0f, 140f), new Vector2(720f, 60f)).fontStyle = FontStyle.Bold;
+        Slider sound = CreateMenuSlider(card, "SoundSlider", new Vector2(0f, 60f), 720f);
+
+        Button vibration = CreateMenuButton(card, "VibrationButton", "VIBRATION: ON", center, new Vector2(0f, -80f), new Vector2(720f, 120f), new Color(1f, 1f, 1f, 0.14f), 44);
+        Text vibrationLabel = vibration.GetComponentInChildren<Text>();
+        vibrationLabel.color = Color.white;
+
+        Button night = CreateMenuButton(card, "NightButton", "NIGHT MODE: ON", center, new Vector2(0f, -220f), new Vector2(720f, 120f), new Color(1f, 1f, 1f, 0.14f), 44);
+        Text nightLabel = night.GetComponentInChildren<Text>();
+        nightLabel.color = Color.white;
+
+        Button done = CreateMenuButton(card, "DoneButton", "DONE", center, new Vector2(0f, -440f), new Vector2(480f, 140f), ScrapGold, 56);
+
+        // Full-screen fade for entering and leaving the menu (starts black, fades up).
+        RectTransform fadeRect = CreateRect("Fade", canvas, Vector2.zero, Vector2.one, center, Vector2.zero, Vector2.zero);
+        Image fade = AddImage(fadeRect, Color.black, raycast: true);
+
+        MainMenuController controller = new GameObject("MainMenuController").AddComponent<MainMenuController>();
+        controller.Configure(titleBlock, play, bestWave, settings, panel.gameObject, music, sound, vibration, vibrationLabel, night, nightLabel, done, fade);
 
         EditorSceneManager.SaveScene(menuScene, MainMenuScenePath);
 
@@ -579,12 +694,68 @@ public static class ProjectSetup
         }
         EditorBuildSettings.scenes = buildScenes.ToArray();
 
-        if (!string.IsNullOrEmpty(previousScenePath))
+        if (!string.IsNullOrEmpty(previousScenePath) && previousScenePath != MainMenuScenePath)
         {
             EditorSceneManager.OpenScene(previousScenePath);
         }
 
         Debug.Log($"Main menu scene built at {MainMenuScenePath} and registered in Build Settings.");
+    }
+
+    private static Slider CreateMenuSlider(Transform parent, string name, Vector2 position, float width)
+    {
+        Vector2 center = new Vector2(0.5f, 0.5f);
+        RectTransform root = CreateRect(name, parent, center, center, center, position, new Vector2(width, 90f));
+        Slider slider = root.gameObject.AddComponent<Slider>();
+
+        RectTransform track = CreateRect("Track", root, new Vector2(0f, 0.5f), new Vector2(1f, 0.5f), center, Vector2.zero, new Vector2(0f, 24f));
+        AddImage(track, new Color(1f, 1f, 1f, 0.18f), RoundedSprite, raycast: true);
+
+        RectTransform fillArea = CreateRect("FillArea", root, new Vector2(0f, 0.5f), new Vector2(1f, 0.5f), center, Vector2.zero, new Vector2(0f, 24f));
+        RectTransform fill = CreateRect("Fill", fillArea, Vector2.zero, new Vector2(0f, 1f), center, Vector2.zero, Vector2.zero);
+        AddImage(fill, ScrapGold, RoundedSprite);
+
+        // Inset by half the knob so it stops flush with the track ends.
+        RectTransform handleArea = CreateRect("HandleArea", root, Vector2.zero, Vector2.one, center, Vector2.zero, new Vector2(-80f, 0f));
+        RectTransform handle = CreateRect("Handle", handleArea, Vector2.zero, new Vector2(0f, 1f), center, Vector2.zero, new Vector2(80f, 0f));
+        Image knob = AddImage(handle, Color.white, CircleSprite, raycast: true);
+
+        slider.fillRect = fill;
+        slider.handleRect = handle;
+        slider.targetGraphic = knob;
+        slider.direction = Slider.Direction.LeftToRight;
+        slider.minValue = 0f;
+        slider.maxValue = 1f;
+        slider.value = 1f;
+        slider.transition = Selectable.Transition.None;
+        return slider;
+    }
+
+    private const string ShadeSpritePath = "Assets/Materials/MenuShade.png";
+
+    // Vertical gradient (opaque at the top, clear at the bottom) for the menu's legibility shades.
+    private static Sprite GetOrCreateShadeSprite()
+    {
+        Sprite existing = AssetDatabase.LoadAssetAtPath<Sprite>(ShadeSpritePath);
+        if (existing != null) return existing;
+
+        var texture = new Texture2D(4, 128, TextureFormat.RGBA32, false);
+        for (int y = 0; y < texture.height; y++)
+        {
+            float fromTop = 1f - y / (float)(texture.height - 1);
+            float alpha = Mathf.Pow(1f - fromTop, 1.6f);
+            for (int x = 0; x < texture.width; x++) texture.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
+        }
+        System.IO.File.WriteAllBytes(ShadeSpritePath, texture.EncodeToPNG());
+        Object.DestroyImmediate(texture);
+
+        AssetDatabase.ImportAsset(ShadeSpritePath);
+        var importer = (TextureImporter)AssetImporter.GetAtPath(ShadeSpritePath);
+        importer.textureType = TextureImporterType.Sprite;
+        importer.wrapMode = TextureWrapMode.Clamp;
+        importer.mipmapEnabled = false;
+        importer.SaveAndReimport();
+        return AssetDatabase.LoadAssetAtPath<Sprite>(ShadeSpritePath);
     }
 
     private static Button CreateMenuButton(Transform parent, string name, string label, Vector2 anchor, Vector2 anchoredPosition, Vector2 sizeDelta, Color? background = null, int fontSize = 44)
@@ -1490,12 +1661,12 @@ public static class ProjectSetup
             new HeroWeapon
             {
                 kind = HeroWeaponKind.Rifle, model = rig.rifle.gameObject, projectilePrefab = bulletPrefab,
-                fireRate = 4f, damage = 10f, range = 10f, fireSound = SfxId.Shoot, firePitch = 1.25f, fireVolume = 0.8f,
+                fireRate = 4f, damage = 10f, range = 10f, fireSound = SfxId.RifleShot, firePitch = 1f, fireVolume = 1f,
             },
             new HeroWeapon
             {
                 kind = HeroWeaponKind.Bow, model = bow, projectilePrefab = arrowPrefab,
-                fireRate = 1.5f, damage = 28f, range = 12f, fireSound = SfxId.Shoot, firePitch = 1.9f, fireVolume = 0.55f,
+                fireRate = 1.5f, damage = 28f, range = 12f, fireSound = SfxId.BowShot, firePitch = 1f, fireVolume = 1f,
             },
         }, firePoint.transform);
 
@@ -2271,6 +2442,64 @@ public static class ProjectSetup
         volume.isGlobal = true;
         volume.priority = 1f;
         volume.sharedProfile = profile;
+    }
+
+    private const string NightPostFxProfilePath = "Assets/Settings/NightPostFX.asset";
+
+    // Night grade for gameplay, layered over the day grade and switched on at runtime by
+    // NightLook when the player has Night Mode on. Kept lighter than the trailer's (no grain or
+    // depth of field) for phone performance and readability.
+    private static void BuildNightLook()
+    {
+        var profile = AssetDatabase.LoadAssetAtPath<UnityEngine.Rendering.VolumeProfile>(NightPostFxProfilePath);
+        if (profile == null)
+        {
+            profile = ScriptableObject.CreateInstance<UnityEngine.Rendering.VolumeProfile>();
+            AssetDatabase.CreateAsset(profile, NightPostFxProfilePath);
+        }
+
+        Bloom bloom = GetOrAddVolumeOverride<Bloom>(profile);
+        bloom.threshold.Override(0.8f);
+        bloom.intensity.Override(1.6f);
+        bloom.scatter.Override(0.7f);
+
+        GetOrAddVolumeOverride<Tonemapping>(profile).mode.Override(TonemappingMode.ACES);
+
+        ColorAdjustments color = GetOrAddVolumeOverride<ColorAdjustments>(profile);
+        color.postExposure.Override(0.55f);
+        color.contrast.Override(18f);
+        color.saturation.Override(0f);
+
+        GetOrAddVolumeOverride<WhiteBalance>(profile).temperature.Override(-15f);
+
+        SplitToning toning = GetOrAddVolumeOverride<SplitToning>(profile);
+        toning.shadows.Override(new Color(0.2f, 0.35f, 0.6f));
+        toning.highlights.Override(new Color(1f, 0.72f, 0.45f));
+        toning.balance.Override(-10f);
+
+        Vignette vignette = GetOrAddVolumeOverride<Vignette>(profile);
+        vignette.intensity.Override(0.34f);
+        vignette.smoothness.Override(0.5f);
+
+        foreach (UnityEngine.Rendering.VolumeComponent component in profile.components) EditorUtility.SetDirty(component);
+        EditorUtility.SetDirty(profile);
+        AssetDatabase.SaveAssets();
+
+        DestroyIfExists("PostFXNight");
+        var volume = new GameObject("PostFXNight").AddComponent<UnityEngine.Rendering.Volume>();
+        volume.isGlobal = true;
+        volume.priority = 2f;
+        volume.weight = 0f;
+        volume.sharedProfile = profile;
+
+        Light sun = null;
+        foreach (Light light in Object.FindObjectsByType<Light>())
+        {
+            if (light.type == LightType.Directional) sun = light;
+        }
+
+        DestroyIfExists("NightLook");
+        new GameObject("NightLook").AddComponent<NightLook>().Configure(sun, Camera.main, volume);
     }
 
     private static T GetOrAddVolumeOverride<T>(UnityEngine.Rendering.VolumeProfile profile) where T : UnityEngine.Rendering.VolumeComponent

@@ -11,7 +11,7 @@ public class Tower : MonoBehaviour
     [SerializeField] private Projectile projectilePrefab;
     [SerializeField] private Transform firePoint;
     [SerializeField] private Transform turretPivot;
-    [SerializeField] private SfxId fireSound = SfxId.Shoot;
+    [SerializeField] private SfxId fireSound = SfxId.LightShot;
     [SerializeField] private float firePitch = 1f;
 
     private const float FireConeDegrees = 12f;

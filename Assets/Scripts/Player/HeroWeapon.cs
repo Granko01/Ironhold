@@ -17,7 +17,7 @@ public class HeroWeapon
     public float fireRate = 4f;
     public float damage = 10f;
     public float range = 10f;
-    public SfxId fireSound = SfxId.Shoot;
-    public float firePitch = 1.25f;
-    public float fireVolume = 0.8f;
+    public SfxId fireSound = SfxId.RifleShot;
+    public float firePitch = 1f;
+    public float fireVolume = 1f;
 }
