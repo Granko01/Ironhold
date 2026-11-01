@@ -1,38 +1,99 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public class PlayerShooter : MonoBehaviour
 {
-    [SerializeField] private Projectile projectilePrefab;
+    [SerializeField] private HeroWeapon[] weapons;
     [SerializeField] private Transform firePoint;
-    [SerializeField] private float range = 10f;
-    [SerializeField] private float fireRate = 4f;
-    [SerializeField] private float damage = 10f;
-    [SerializeField] private float rotationSpeed = 720f;
+    [SerializeField] private float rotationSpeed = 1080f;
+    [SerializeField] private float fireConeDegrees = 15f;
+    [SerializeField] private Animator animator;
+
+    [Header("First Person")]
+    [SerializeField] private float aimAssistDegrees = 5f;
+    [SerializeField] private float recoilKickDegrees = 1.2f;
+
+    private static readonly int ShootParam = Animator.StringToHash("Shoot");
 
     private float cooldownTimer;
     private bool warnedMissingRefs;
+    private bool isDead;
     private Enemy currentTarget;
+    private int equippedIndex;
 
-    public void Configure(Projectile prefab, Transform firePointTransform)
+    // PlayerController leaves facing to the shooter while it has something to aim at.
+    public bool HasTarget => currentTarget != null && !isDead;
+    public HeroWeaponKind EquippedKind => Equipped != null ? Equipped.kind : HeroWeaponKind.Rifle;
+
+    private HeroWeapon Equipped => weapons != null && equippedIndex < weapons.Length ? weapons[equippedIndex] : null;
+
+    public void Configure(HeroWeapon[] heroWeapons, Transform firePointTransform)
     {
-        projectilePrefab = prefab;
+        weapons = heroWeapons;
         firePoint = firePointTransform;
+    }
+
+    private void Awake()
+    {
+        if (animator == null) animator = GetComponentInChildren<Animator>();
+
+        Health health = GetComponent<Health>();
+        if (health != null)
+        {
+            health.Died += () => isDead = true;
+            health.Revived += () => isDead = false;
+        }
+
+        Equip(HeroWeaponKind.Rifle);
+    }
+
+    public void Equip(HeroWeaponKind kind)
+    {
+        if (weapons == null) return;
+
+        for (int i = 0; i < weapons.Length; i++)
+        {
+            bool match = weapons[i].kind == kind;
+            if (match) equippedIndex = i;
+            if (weapons[i].model != null) weapons[i].model.SetActive(match);
+        }
+
+        currentTarget = null;
+        cooldownTimer = 0.2f;
     }
 
     private void LateUpdate()
     {
         cooldownTimer -= Time.deltaTime;
 
-        if (TowerPlacer.IsPlacing) return;
+        HeroWeapon weapon = Equipped;
+        if (isDead || TowerPlacer.IsPlacing || weapon == null)
+        {
+            currentTarget = null;
+            return;
+        }
 
-        AcquireTarget();
+        if (FirstPersonView.IsActive)
+        {
+            // Manual aim: no auto-targeting, fire only while FIRE (or Space) is held.
+            currentTarget = null;
+            if (cooldownTimer <= 0f && IsFireHeld() && weapon.projectilePrefab != null && firePoint != null)
+            {
+                FireFirstPerson(weapon);
+                cooldownTimer = 1f / (weapon.fireRate * RunModifiers.FireRate(TowerKind.Hero));
+            }
+            return;
+        }
+
+        AcquireTarget(weapon.range);
         if (currentTarget == null) return;
 
-        AimAtTarget();
+        float angleToTarget = AimAtTarget();
 
-        if (cooldownTimer > 0f) return;
+        // Waiting until the hero roughly faces the target stops shots spraying sideways mid-turn.
+        if (cooldownTimer > 0f || angleToTarget > fireConeDegrees) return;
 
-        if (projectilePrefab == null || firePoint == null)
+        if (weapon.projectilePrefab == null || firePoint == null)
         {
             if (!warnedMissingRefs)
             {
@@ -42,58 +103,91 @@ public class PlayerShooter : MonoBehaviour
             return;
         }
 
-        Fire();
-        cooldownTimer = 1f / fireRate;
+        Fire(weapon);
+        cooldownTimer = 1f / (weapon.fireRate * RunModifiers.FireRate(TowerKind.Hero));
     }
 
-    private void AcquireTarget()
+    private void AcquireTarget(float range)
     {
-        if (currentTarget != null)
-        {
-            float distSqr = (currentTarget.transform.position - transform.position).sqrMagnitude;
-            if (distSqr <= range * range) return;
-            currentTarget = null;
-        }
-
-        Collider[] hits = Physics.OverlapSphere(transform.position, range);
-        float closestDistSqr = float.MaxValue;
-        Enemy closest = null;
-
-        foreach (Collider hit in hits)
-        {
-            Enemy enemy = hit.GetComponent<Enemy>();
-            if (enemy == null) continue;
-
-            float distSqr = (enemy.transform.position - transform.position).sqrMagnitude;
-            if (distSqr < closestDistSqr)
-            {
-                closestDistSqr = distSqr;
-                closest = enemy;
-            }
-        }
-
-        currentTarget = closest;
+        if (currentTarget != null && currentTarget.IsAlive && currentTarget.IsWithin(transform.position, range)) return;
+        currentTarget = Enemy.FindClosest(transform.position, range);
     }
 
-    private void AimAtTarget()
+    // Returns the remaining yaw (degrees) between the hero's facing and the target.
+    private float AimAtTarget()
     {
         Vector3 direction = currentTarget.transform.position - transform.position;
         direction.y = 0f;
-        if (direction.sqrMagnitude < 0.0001f) return;
+        if (direction.sqrMagnitude < 0.0001f) return 0f;
 
         Quaternion targetRotation = Quaternion.LookRotation(direction);
         transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
+        return Quaternion.Angle(transform.rotation, targetRotation);
     }
 
-    private void Fire()
+    private void Fire(HeroWeapon weapon)
     {
-        Projectile projectile = Instantiate(projectilePrefab, firePoint.position, firePoint.rotation);
-        projectile.Launch(firePoint.forward, damage);
+        Projectile.FireVolley(weapon.projectilePrefab, firePoint, weapon.damage * RunModifiers.Damage(TowerKind.Hero), currentTarget, TowerKind.Hero);
+        Sfx.Play(weapon.fireSound, weapon.firePitch, weapon.fireVolume);
+        if (animator != null) animator.SetTrigger(ShootParam);
+    }
+
+    private static bool IsFireHeld()
+    {
+        if (FireButton.IsHeld) return true;
+        Keyboard kb = Keyboard.current;
+        return kb != null && kb.spaceKey.isPressed;
+    }
+
+    // Shoots from the muzzle toward whatever is under the crosshair. A zombie within a few degrees
+    // of the crosshair gets the shot instead (aim assist), since thumbs aren't precise.
+    private void FireFirstPerson(HeroWeapon weapon)
+    {
+        Camera cam = Camera.main;
+        if (cam == null) return;
+
+        Vector3 eye = cam.transform.position;
+        Vector3 look = cam.transform.forward;
+        float maxDistance = weapon.range * 2.5f;
+
+        Enemy assisted = FindAimAssistTarget(eye, look, maxDistance);
+        Vector3 aimPoint;
+        if (assisted != null) aimPoint = assisted.AimPoint;
+        else if (Physics.Raycast(eye, look, out RaycastHit hit, maxDistance, ~0, QueryTriggerInteraction.Ignore)) aimPoint = hit.point;
+        else aimPoint = eye + look * maxDistance;
+
+        Vector3 direction = aimPoint - firePoint.position;
+        if (direction.sqrMagnitude < 0.0001f) direction = look;
+
+        Projectile.FireVolley(weapon.projectilePrefab, firePoint.position, Quaternion.LookRotation(direction),
+            weapon.damage * RunModifiers.Damage(TowerKind.Hero), assisted, TowerKind.Hero);
+        Sfx.Play(weapon.fireSound, weapon.firePitch, weapon.fireVolume);
+        if (animator != null) animator.SetTrigger(ShootParam);
+        FirstPersonView.Instance.Kick(recoilKickDegrees);
+    }
+
+    private Enemy FindAimAssistTarget(Vector3 eye, Vector3 look, float maxDistance)
+    {
+        Enemy best = null;
+        float bestAngle = aimAssistDegrees;
+        foreach (Enemy enemy in Enemy.Active)
+        {
+            Vector3 toEnemy = enemy.AimPoint - eye;
+            if (toEnemy.sqrMagnitude > maxDistance * maxDistance) continue;
+
+            float angle = Vector3.Angle(look, toEnemy);
+            if (angle < bestAngle)
+            {
+                bestAngle = angle;
+                best = enemy;
+            }
+        }
+        return best;
     }
 
     private void OnDrawGizmosSelected()
     {
         Gizmos.color = Color.cyan;
-        Gizmos.DrawWireSphere(transform.position, range);
+        Gizmos.DrawWireSphere(transform.position, Equipped != null ? Equipped.range : 10f);
     }
 }

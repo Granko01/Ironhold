@@ -1,0 +1,23 @@
+using System;
+using UnityEngine;
+
+public enum HeroWeaponKind
+{
+    Rifle,
+    Bow,
+}
+
+// One weapon the hero can hold. Stats are base values; hero upgrades from RunModifiers stack on top.
+[Serializable]
+public class HeroWeapon
+{
+    public HeroWeaponKind kind;
+    public GameObject model;
+    public Projectile projectilePrefab;
+    public float fireRate = 4f;
+    public float damage = 10f;
+    public float range = 10f;
+    public SfxId fireSound = SfxId.RifleShot;
+    public float firePitch = 1f;
+    public float fireVolume = 1f;
+}

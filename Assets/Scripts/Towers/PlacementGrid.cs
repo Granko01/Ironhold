@@ -8,6 +8,9 @@ public class PlacementGrid : MonoBehaviour
     [SerializeField] private Vector3 origin = Vector3.zero;
     [SerializeField] private Color gridColor = new Color(0.2f, 1f, 1f, 0.6f);
 
+    // Above the arena floor layers (paths/plaza/portals) so the grid stays visible.
+    private const float LineHeight = 0.1f;
+
     private readonly HashSet<Vector2Int> occupiedCells = new HashSet<Vector2Int>();
     private Material lineMaterial;
 
@@ -40,7 +43,11 @@ public class PlacementGrid : MonoBehaviour
 
     public void Free(Vector2Int cell) => occupiedCells.Remove(cell);
 
-    public void OccupyWorldArea(Vector3 worldCenter, Vector3 size)
+    public void FreeWorldArea(Vector3 worldCenter, Vector3 size) => ForEachCellInArea(worldCenter, size, Free);
+
+    public void OccupyWorldArea(Vector3 worldCenter, Vector3 size) => ForEachCellInArea(worldCenter, size, Occupy);
+
+    private void ForEachCellInArea(Vector3 worldCenter, Vector3 size, System.Action<Vector2Int> action)
     {
         Vector2Int minCell = WorldToCell(worldCenter - new Vector3(size.x, 0f, size.z) * 0.5f);
         Vector2Int maxCell = WorldToCell(worldCenter + new Vector3(size.x, 0f, size.z) * 0.5f);
@@ -49,7 +56,7 @@ public class PlacementGrid : MonoBehaviour
         {
             for (int z = minCell.y; z <= maxCell.y; z++)
             {
-                Occupy(new Vector2Int(x, z));
+                action(new Vector2Int(x, z));
             }
         }
     }
@@ -70,15 +77,15 @@ public class PlacementGrid : MonoBehaviour
         for (int x = 0; x <= gridSize.x; x++)
         {
             float wx = origin.x - halfWidth + x * cellSize;
-            GL.Vertex(new Vector3(wx, origin.y + 0.02f, origin.z - halfHeight));
-            GL.Vertex(new Vector3(wx, origin.y + 0.02f, origin.z + halfHeight));
+            GL.Vertex(new Vector3(wx, origin.y + LineHeight, origin.z - halfHeight));
+            GL.Vertex(new Vector3(wx, origin.y + LineHeight, origin.z + halfHeight));
         }
 
         for (int z = 0; z <= gridSize.y; z++)
         {
             float wz = origin.z - halfHeight + z * cellSize;
-            GL.Vertex(new Vector3(origin.x - halfWidth, origin.y + 0.02f, wz));
-            GL.Vertex(new Vector3(origin.x + halfWidth, origin.y + 0.02f, wz));
+            GL.Vertex(new Vector3(origin.x - halfWidth, origin.y + LineHeight, wz));
+            GL.Vertex(new Vector3(origin.x + halfWidth, origin.y + LineHeight, wz));
         }
 
         GL.End();
